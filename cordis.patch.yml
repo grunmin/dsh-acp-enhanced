@@ -1,0 +1,12 @@
+# dsh-acp-enhanced bundle patch: inserts the enhanced ACP transport over a
+# composition that provides ctx.agents (the agent spine), an LLM adapter,
+# sandboxed bash/fs, approval, and optionally permission presets (for the
+# session/mode and permission_preset config surfaces).
+#
+# Install with:  dsh plugin --profile <name> add dsh-acp-enhanced
+- insert:
+    - id: acp-enhanced
+      name: 'dsh-acp-enhanced'
+      config:
+        provider: deepseek-official
+        model: deepseek-v4-flash
