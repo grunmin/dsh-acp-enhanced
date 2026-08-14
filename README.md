@@ -61,31 +61,66 @@ cp profile/cordis.yml ~/.dsh/profiles/acp-enhanced/cordis.yml
 
 ### 2. Provide the API key
 
+The profile resolves `DEEPSEEK_API_KEY` through the dsh credentials service.
+Store it once (equivalent to what the Web Models page writes):
+
 ```sh
-export DEEPSEEK_API_KEY=sk-...   # or configure through the credentials service
+# ~/.dsh/.credentials.yaml — created 0600 by dsh, read automatically
+# DEEPSEEK_API_KEY: sk-...
+echo "DEEPSEEK_API_KEY: sk-..." >> ~/.dsh/.credentials.yaml && chmod 600 ~/.dsh/.credentials.yaml
+```
+
+Or keep exporting it in the launching environment:
+
+```sh
+export DEEPSEEK_API_KEY=sk-...
 dsh --profile acp-enhanced       # stdout is the ACP wire — do not log to it
 ```
 
 ### 3. Register in Zed
 
+Zed (a GUI app) spawns agent processes with a minimal PATH, so use the bundled
+launcher `scripts/dsh-acp-zed.sh` — it locates `node` and `dsh` itself
+(PATH → npx cache → global npm → Homebrew), prepends the node dir to PATH, and
+optionally inherits `DEEPSEEK_API_KEY` from a running `dsh web` process.
+
 `~/.config/zed/settings.json`:
 
-```json
+```jsonc
 {
+  // ...your existing settings...
   "agent_servers": {
-    "dsh": {
+    // optional: existing agents (pi-acp, codex-acp, ...) stay untouched
+    "dsh-acp-enhanced": {
       "type": "custom",
-      "command": "dsh",
-      "args": ["--profile", "acp-enhanced"],
-      "env": {}
+      "command": "/bin/bash",
+      "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
+      "env": {}          // optional: {"DEEPSEEK_API_KEY": "sk-..."} overrides
     }
   }
 }
 ```
 
-Then in Zed: **AI → Agents → External Agent → Add Custom Agent → dsh**. The
-agent panel shows the context meter (`usage_update`), model / reasoning-effort
-/ permission-preset config options, permission modes, and streamed replies.
+Zed hot-reloads settings. Then, in the Zed UI:
+
+1. Open the **AI Agent panel** (right sidebar, `Cmd+Shift+A`).
+2. Click the **agent selector** at the top of the panel (or run
+   `agent: select agent` from the command palette) and choose
+   **dsh-acp-enhanced**.
+3. The agent process spawns on first selection. Type a message — replies
+   stream in, the context meter (`usage_update`) tracks used/size, and the
+   panel exposes **Model**, **Reasoning effort** and **Permission preset**
+   config options plus the read-only / workspace-write / full-access modes.
+
+### Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| `Server exited with status 127` / `exec: dsh: not found` | Zed's PATH lacks `node`/`dsh`. Use the bundled `dsh-acp-zed.sh` launcher (it resolves both); verify with `bash scripts/dsh-acp-zed.sh` in a clean shell. |
+| `no API key for provider route "deepseek-official"` | Key not resolvable. Write `~/.dsh/.credentials.yaml` (see step 2) or set `env.DEEPSEEK_API_KEY` in the agent_servers entry. |
+| Agent not listed after editing settings | Run `zed: reload settings` (command palette) or restart Zed. |
+| `session/new` fails with `additionalDirectories is not supported` | The ACP bridge is baseline-only; Zed sends no extra dirs by default — if a custom setup does, remove it. |
+| Need verbose diagnostics | Launch with `ACP_DEBUG=1 dsh --profile acp-enhanced` (lifecycle trace on stderr). |
 
 ## Development
 

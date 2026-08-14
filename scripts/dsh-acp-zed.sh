@@ -1,14 +1,55 @@
 #!/bin/bash
 # Zed launcher for dsh-acp-enhanced.
 #
+# Zed (a GUI app) spawns agent processes with a minimal PATH that usually does
+# NOT include node or dsh, so this wrapper locates both itself:
+#   - node: PATH, /opt/homebrew/bin, /usr/local/bin, ~/.nvm/versions/node/*
+#   - dsh:  PATH, the npx cache (~/.npm/_npx/*/node_modules/.bin), the global
+#           npm prefix bin dir, /opt/homebrew/bin, /usr/local/bin
+# and prepends the node dir to PATH so dsh's `#!/usr/bin/env node` shebang
+# resolves.
+#
 # The profile resolves DEEPSEEK_API_KEY through the dsh credentials service
-# (~/.dsh/.credentials.yaml), so no environment plumbing is required. This
-# wrapper only:
-#   1. prefers an explicit DEEPSEEK_API_KEY from Zed's agent_servers.env, and
-#   2. falls back to the key of a running `dsh web` process (ps eww) for
-#      setups that keep the key in the web launch environment instead.
+# (~/.dsh/.credentials.yaml), so no environment plumbing is required; an
+# explicit DEEPSEEK_API_KEY from Zed's agent_servers.env wins, and a running
+# `dsh web` process is a final fallback source.
+#
 # stdout stays the ACP JSON-RPC wire; diagnostics go to stderr.
 set -u
+
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [ -z "${NODE_BIN}" ]; then
+  for candidate in \
+    /opt/homebrew/bin/node \
+    /usr/local/bin/node \
+    "$HOME"/.nvm/versions/node/*/bin/node; do
+    if [ -x "${candidate}" ]; then
+      NODE_BIN="${candidate}"
+      break
+    fi
+  done
+fi
+if [ -n "${NODE_BIN}" ]; then
+  export PATH="$(dirname "${NODE_BIN}"):${PATH}"
+fi
+
+DASH_BIN="$(command -v dsh 2>/dev/null || true)"
+if [ -z "${DASH_BIN}" ]; then
+  for candidate in \
+    "$HOME"/.npm/_npx/*/node_modules/.bin/dsh \
+    "$(npm prefix -g 2>/dev/null)/bin/dsh" \
+    /opt/homebrew/bin/dsh \
+    /usr/local/bin/dsh; do
+    if [ -x "${candidate}" ]; then
+      DASH_BIN="${candidate}"
+      break
+    fi
+  done
+fi
+if [ -z "${NODE_BIN}" ] || [ -z "${DASH_BIN}" ]; then
+  echo "dsh-acp-zed: cannot locate node and/or dsh (node='${NODE_BIN}' dsh='${DASH_BIN}'); install them or set PATH" >&2
+  exit 127
+fi
 
 if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
   WEB_PID="$(pgrep -f 'dsh web' | head -n 1)"
@@ -20,4 +61,4 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
   fi
 fi
 
-exec dsh --profile acp-enhanced "$@"
+exec "${DASH_BIN}" --profile acp-enhanced "$@"
