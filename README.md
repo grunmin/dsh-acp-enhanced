@@ -19,7 +19,99 @@ Web GUI has:
 | **Permission preset** | `session/set_config_option` (`permission_preset`) **and** ACP session modes via `session/set_mode` | Mode switcher / config-option UI |
 | **Approval** | `session/request_permission` (allow-once / reject-once per tool call) | Native approval prompt |
 
+> **Repository layout** — the repo holds two independent packages:
+> - `dsh-acp-enhanced` (this root): the enhanced ACP bridge (`lib/index.js`).
+> - `packages/dsh-web-search-openrouter/`: a standalone `ctx.web` search
+>   provider that routes `web_search` through any OpenAI-Responses gateway
+>   instead of DeepSeek's Anthropic `/messages` endpoint. It is deliberately
+>   **not** coupled to the ACP bridge, so any profile (the Web GUI included)
+>   can mount it.
+
 ## Quick start
+
+### 0. OpenAI-Responses gateway variant
+
+The steps above target DeepSeek's official API (`deepseek-official` +
+`DEEPSEEK_API_KEY`). If you reach a model through an OpenAI-Responses
+gateway (a OpenAI-Responses LLM gateway that implements the OpenAI Responses API),
+you can use a much smaller profile: the shipped `dsh-base` bundle already
+mounts the whole agent stack (spine, sandbox, approval, permission presets,
+token meter, compaction, fs tools, ...), so the profile only adds the
+`acp-enhanced` row, a default-model override, and the optional
+`web-search-openrouter` provider.
+
+```sh
+# 1) profile skeleton (bundle = dsh-base; "init" pnpm error is harmless)
+dsh plugin --profile acp-enhanced init
+
+# 2) install the repo's deps and link both packages into the profile
+cd /path/to/dsh-acp-enhanced && pnpm install
+mkdir -p ~/.dsh/profiles/acp-enhanced/node_modules
+ln -s /path/to/dsh-acp-enhanced ~/.dsh/profiles/acp-enhanced/node_modules/dsh-acp-enhanced
+ln -s /path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter \
+  ~/.dsh/profiles/acp-enhanced/node_modules/dsh-web-search-openrouter
+
+# 3) write the patch layer (see below)
+```
+
+`~/.dsh/profiles/acp-enhanced/cordis.patch.yml` (the *user patch layer* — the
+root `cordis.yml` is rewritten to `[]` on every boot, so the composition lives
+here, not in `cordis.yml`):
+
+```yaml
+- id: agent-default-model
+  config:
+    provider: <your-provider-id>
+    model: <your-model-id>
+
+# Route web_search through the same gateway: its OpenAI Responses API
+# implements the native `web_search` tool (returns `openrouter:web_search`
+# items), so no separate DeepSeek search key/endpoint is needed.
+- id: web
+  config:
+    searchProvider: openai-responses
+
+- insert:
+    - id: acp-enhanced
+      name: 'dsh-acp-enhanced'
+      config:
+        provider: <your-provider-id>
+        model: <your-model-id>
+
+    - id: web-search-openrouter
+      name: 'dsh-web-search-openrouter'
+      config:
+        enabled: true
+        baseURL: http://<gateway-host>:<port>/v1
+        model: <your-model-id>
+        apiKeyEnv: RESPONSES_API_KEY
+        searchContextSize: medium
+        maxOutputTokens: 1024
+```
+
+Why the `agent-default-model` override: the bridge's per-session selection
+falls back to `agent-default-model` before any request header exists, and the
+base row defaults to `deepseek-official` — without the override, prompts would
+route to llm-deepseek and fail with *no API key for provider route
+"deepseek-official"*.
+
+Web search is a **separate package** (`packages/dsh-web-search-openrouter`),
+not part of the ACP bridge: the provider is an orthogonal `ctx.web` capability
+and can be mounted by any profile (the Web GUI included). It registers a
+search provider under the id `openai-responses` that calls the gateway's
+`/responses` endpoint with the OpenAI `web_search` server tool;
+`web.searchProvider` selects it. The bridge's Config stays clean
+(`provider`/`model` only) and the `deepseek-official` provider remains
+available for setups without a gateway.
+
+Zed registration is identical to step 3 below; verify with:
+
+```sh
+node scripts/acp-client.mjs                          # expect ALL CHECKS PASSED
+node scripts/web-search-test.mjs                     # expect ALL CHECKS PASSED (web_search via gateway)
+env -i HOME=$HOME PATH=/usr/bin:/bin node scripts/acp-client.mjs \
+  /bin/bash /path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh   # Zed-like spawn
+```
 
 ### 1. Create the profile
 
