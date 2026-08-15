@@ -11,14 +11,37 @@
  * Usage: node scripts/acp-mcp-test.mjs [command] [arg...]
  * Default command: dsh --profile acp-enhanced
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
 
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mcp-echo-server.mjs')
-const [cmd = 'dsh', ...rest] = process.argv.slice(2)
-const args = rest.length > 0 ? rest : ['--profile', 'acp-enhanced']
+
+// Explicit command/args win; otherwise self-create a throwaway profile from
+// this checkout (like acp-smoke-keyless.mjs) so the test runs anywhere,
+// including CI where no named profile exists.
+const explicit = process.argv.slice(2)
+let cmd
+let args
+let tempProfile
+if (explicit.length > 0) {
+  cmd = explicit[0]
+  args = explicit.slice(1)
+} else {
+  tempProfile = `acp-mcp-test-${process.pid}`
+  const setup = spawnSync('dsh', ['plugin', '--profile', tempProfile, 'add', `link:${repo}`], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (setup.status !== 0) {
+    console.error(String(setup.stderr))
+    console.error('FAIL  could not create profile via dsh plugin add')
+    process.exit(1)
+  }
+  cmd = 'dsh'
+  args = ['--profile', tempProfile]
+}
 
 let failed = 0
 function check(label, ok, detail = '') {
@@ -124,6 +147,9 @@ async function main() {
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
   } finally {
     child.kill()
+    if (tempProfile !== undefined) {
+      spawnSync('rm', ['-rf', `${process.env.HOME}/.dsh/profiles/${tempProfile}`])
+    }
   }
   process.exit(failed === 0 ? 0 : 1)
 }
