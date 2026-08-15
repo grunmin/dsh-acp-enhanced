@@ -17,7 +17,7 @@
 | **缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 / 轮次计数** | `usage_update._meta` + `tool_call` / `tool_call_update` 的 `_meta` | 每一步都有原始数字（`_meta` 扩展字段携带完整明细） |
 | **工具调用可见性** | `tool_call` 携带 `rawInput`（解析后的参数对象）与 `kind`（read/edit/execute/…）；`tool_call_update` 携带 `rawOutput`（结果预览，最多 12k 字符） | 工具卡片能展开看到**具体参数**（如 bash 执行的命令）与**执行结果**，并按工具类型渲染图标 |
 | **模型切换** | `session/set_config_option`，`model` 下拉框（取值来自实时的 `provider/model` 模型目录；分组线格式为 ACP 规范的 `{ group, name, options }`） | 配置项 UI——可切换路由内任意模型 |
-| **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（仅当当前模型路由**暴露**可选的 reasoning efforts 时） | 配置项 UI（当前网关路由的所有模型都不暴露 efforts——见"设计说明"，这是路由/适配器限制而非桥接器 bug） |
+| **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（仅当当前模型路由**暴露**可选的 reasoning efforts 时） | 配置项 UI（仅当路由暴露可用 efforts 时出现，见"设计说明"） |
 | **权限预设** | `session/set_config_option`（`permission_preset`）**以及**通过 `session/set_mode` 的 ACP 会话模式 | 模式切换器 / 配置项 UI |
 | **审批** | `session/request_permission`（每个工具调用 allow-once / reject-once） | 原生审批弹窗 |
 | **Zed 客户端文件工具** | agent 侧注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`，转发为 `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | 文件编辑出现在 agent 面板的 **"编辑文件"区（带 diff + 接受/拒绝）**；命令跑在 **Zed 真实终端** 里 |
@@ -75,9 +75,9 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"
 > patch 读这两个变量，缺省回落到 `deepseek-official`/`deepseek-v4-flash`）。`<KEY_ENV_NAME>`
 > 是 provider 声明读取的 key 环境变量名（DeepSeek 官方是 `DEEPSEEK_API_KEY`；网关适配器
 > 通常有自己的 `apiKeyEnv`）——也可以不写在 Zed 里，而是存进 `~/.dsh/.credentials.yaml`
-> 由 dsh 凭据服务统一管理。路由换哪种模型都走同一条安装路径，只是 env 值不同：官方 API
-> 填 `deepseek-official`/`deepseek-v4-flash` + `DEEPSEEK_API_KEY`；网关填网关的
-> provider/model + 网关 key。
+> 由 dsh 凭据服务统一管理。路由换哪种模型都走同一条安装路径，只是 env 值不同：DeepSeek
+> 官方 API 填 `deepseek-official`/`deepseek-v4-flash` + `DEEPSEEK_API_KEY`；通过
+> OpenAI-Responses 网关访问模型时，则填网关暴露的 provider/model + 网关要求的 key。
 
 Zed 会热重载设置。打开 **AI Agent 面板**（`Cmd+Shift+A`）→ 顶部 **agent 选择器** 选
 **dsh-acp-enhanced** → 输入第一条消息即可。回复实时流式返回，状态栏显示上下文用量，面板
@@ -125,7 +125,7 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/p
 | `Server exited with status 127` / `exec: dsh: not found` | Zed 的 PATH 缺少 `node`/`dsh`。请用随附的 `dsh-acp-zed.sh` 启动器（它会解析两者）；可用 `bash scripts/dsh-acp-zed.sh` 在干净 shell 中验证。 |
 | `no API key for provider route "deepseek-official"` | 无法解析 key。写入 `~/.dsh/.credentials.yaml`（见第 2 步），或在 agent_servers 条目里设置 `env.DEEPSEEK_API_KEY`。 |
 | 编辑设置后 agent 未出现 | 执行 `zed: reload settings`（命令面板）或重启 Zed。 |
-| 在 Zed 里"无法切换模型"或"上下文用量不显示" | 通常是选到了不可路由的幽灵 provider（如某些环境 上仍挂载的 `deepseek-official`）。本桥接器默认已过滤幽灵分组（只广播 `config.provider` 模型），若仍出现请确认 profile 的 `config.provider` 指向真实可用的路由，并把被污染的 `agent-default-model` 默认重置回该路由。见"设计说明"。 |
+| 在 Zed 里"无法切换模型"或"上下文用量不显示" | 通常是选到了不可路由的幽灵 provider（例如某个适配器已挂载但没有任何可用的 API key）。本桥接器默认已过滤幽灵分组（只广播 `config.provider` 模型），若仍出现请确认 profile 的 `config.provider` 指向真实可用的路由，并把被污染的 `agent-default-model` 默认重置回该路由。见"设计说明"。 |
 | `session/new` 报 `additionalDirectories is not supported` | ACP 桥接器仅支持 baseline；Zed 默认不会发送额外目录——若自定义配置发送了就移除它。 |
 | 需要详细诊断 | 用 `ACP_DEBUG=1 dsh --profile acp-enhanced` 启动（stderr 上的生命周期 trace）。 |
 
@@ -175,12 +175,11 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   响应所以测试没拦住；现在 `acp-client-tools.mjs` 会对每个 config option 跑
   `zSessionConfigOption.safeParse`，这类线格式错误不会再漏网。
 - **推理强度的路由限制**：`reasoning_effort` 选项只在模型路由**暴露** efforts 时广播
-  （`resolveModelInfo().reasoning.efforts` 非空）。当前网关路由的 9 个模型都不
-  暴露 efforts（逐个探测确认），且显式设置会被适配器拒绝（`does not support reasoning
-  effort "high"`）——所以该路由下 Zed 里没有推理强度下拉是**正确行为**，不是桥接器 bug；
-  换到暴露 efforts 的路由（如其他环境 上的官方 deepseek 模型）后下拉框会自动出现。
+  （`resolveModelInfo().reasoning.efforts` 非空）。对不暴露 efforts 的路由，显式设置强度会被
+  适配器拒绝（`does not support reasoning effort "high"`）——所以这类路由下 Zed 里没有推理
+  强度下拉是**正确行为**，不是桥接器 bug；换到暴露 efforts 的路由后下拉框会自动出现。
 - **模型目录过滤（`includeAllProviders`，默认关）**：默认只广播 `config.provider` 的模型，
-  避免把"幽灵 provider"（已挂载但不可路由的适配器，例如聊天走网关时仍挂着的官方
+  避免把"幽灵 provider"（已挂载但不可路由的适配器，例如没有可用 API key 而仍挂载的
   `deepseek-official`）列进下拉框。这些模型在列表里看起来可切换，但一旦选中，后续每次
   prompt 都会以 `MISSING_CREDENTIAL`（`no API key for provider route "xxx"`）失败——在
   Zed 里表现为"无法切换模型、且因 turn 失败而不再收到 `usage_update`，上下文用量不显示"
