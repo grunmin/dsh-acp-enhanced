@@ -23,7 +23,7 @@ const args = rest.length > 0 ? rest : ['--profile', 'acp-enhanced']
 const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
 const stream = ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout))
 
-const received = { writes: [], reads: [], terminals: [], elicitations: [], plans: [] }
+const received = { writes: [], reads: [], terminals: [], elicitations: [], plans: [], toolCalls: [] }
 
 // Tap the raw stream: log every non-session/update line so request/response
 // traffic (fs/..., terminal/...) is visible.
@@ -42,6 +42,7 @@ const client = {
   async sessionUpdate(params) {
     const kind = params?.update?.sessionUpdate
     if (kind === 'tool_call' || kind === 'tool_call_update') {
+      received.toolCalls.push({ kind, update: params.update })
       console.log('CLIENT session/update:', kind, params?.update?.title ?? params?.update?.status)
     }
     if (kind === 'plan') {
@@ -160,6 +161,13 @@ try {
     check('write carries path+content', w.path === '/tmp/acp-client-tools-test.txt' && w.content === 'hello acp',
       JSON.stringify({ path: w.path, content: w.content }))
   }
+  // tool_call notifications must carry the arguments (rawInput) and kind so
+  // the editor can show what the tool is actually doing.
+  const writeCall = received.toolCalls.find((t) => t.update.title === 'zed_write_text_file')
+  check('tool_call carries kind for edits', writeCall?.update?.kind === 'edit',
+    JSON.stringify(writeCall?.update?.kind))
+  check('tool_call carries rawInput for the write', writeCall?.update?.rawInput?.path === '/tmp/acp-client-tools-test.txt',
+    JSON.stringify(writeCall?.update?.rawInput))
 
   // ── prompt 2: read through the editor ────────────────────────────────────
   const p2 = await conn.prompt({
@@ -184,6 +192,14 @@ try {
   check('terminal prompt settles', p3.stopReason === 'end_turn', `stopReason=${p3.stopReason}`)
   check('terminal/create reached the client', received.terminals.length >= 1,
     JSON.stringify(received.terminals.map((t) => ({ cmd: t.command, cwd: t.cwd }))))
+  const termCall = received.toolCalls.find((t) => t.update.title === 'zed_terminal')
+  check('tool_call kind is execute for terminals', termCall?.update?.kind === 'execute',
+    JSON.stringify(termCall?.update?.kind))
+  check('tool_call rawInput carries the command', termCall?.update?.rawInput?.command === 'echo hi',
+    JSON.stringify(termCall?.update?.rawInput))
+  check('tool_call_update carries the output preview',
+    received.toolCalls.some((t) => t.kind === 'tool_call_update' && typeof t.update.rawOutput === 'string' && t.update.rawOutput.includes('hello from the mock terminal')),
+    JSON.stringify(received.toolCalls.filter((t) => t.kind === 'tool_call_update').map((t) => (t.update.rawOutput ?? '').slice(0, 40))))
 
   // ── prompt 4: ask the user through an editor form ────────────────────────
   const p4 = await conn.prompt({

@@ -15,6 +15,7 @@
 | **块级流式输出** | 每个已提交文本块（`block-end`）发送一条 `agent_message_chunk`，按每个模型 step 的 `messageId` 分组 | agent 工作时文本实时出现；被取消/重试的块不会残留撕裂的半截输出 |
 | **Token 与上下文遥测** | 标准 `usage_update`（`used` = 上下文压力，`size` = 模型上下文窗口） | agent 状态栏中的上下文仪表 |
 | **缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 / 轮次计数** | `usage_update._meta` + `tool_call` / `tool_call_update` 的 `_meta` | 每一步都有原始数字（`_meta` 扩展字段携带完整明细） |
+| **工具调用可见性** | `tool_call` 携带 `rawInput`（解析后的参数对象）与 `kind`（read/edit/execute/…）；`tool_call_update` 携带 `rawOutput`（结果预览，最多 12k 字符） | 工具卡片能展开看到**具体参数**（如 bash 执行的命令）与**执行结果**，并按工具类型渲染图标 |
 | **模型切换** | `session/set_config_option`，`model` 下拉框（取值来自实时的 `provider/model` 模型目录） | 配置项 UI |
 | **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（当前模型路由可用的强度） | 配置项 UI |
 | **权限预设** | `session/set_config_option`（`permission_preset`）**以及**通过 `session/set_mode` 的 ACP 会话模式 | 模式切换器 / 配置项 UI |
@@ -238,6 +239,13 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   + 缓存写入；size = 所路由模型的上下文窗口），完整明细在 `_meta` 中：输入/输出/缓存/推理
   token、`cacheHitRate`、`tps`（生成 token / step 墙钟耗时）、step 耗时、轮次计数，以及累计的
   工具调用统计。
+- **工具调用可见性**：`tool_call` 通知带 `kind`（`toolKindFor` 按工具名映射到
+  read/edit/execute/search/fetch/think/other）与 `rawInput`（`JSON.parse` 参数，失败则回退为
+  字符串），Zed 的工具卡片因此能展开看到具体参数（bash 的命令、写入的文件等）；
+  `tool_call_update` 带 `rawOutput`（从 `ToolResultMessage` 的文本块提取结果预览，截断 12k）。
+  注意 dsh 的 `tool/result` 事件里 `toolCallId` 在 `message.content[0].toolCallId`
+  （`ToolResultBlock`）上，不在事件根——漏取会导致 SDK 校验拒绝整条 `tool_call_update`。
+  历史回放（resume）同样携带这些字段。
 - **会话配置**：`model` 下拉框枚举实时模型目录（`ctx.llm.listProviders` → `listModels` →
   `resolveModelInfo`），`reasoning_effort` 下拉框枚举当前路由的可用强度，`permission_preset`
   枚举已挂载的预设。修改走 `llm.resolveCallConfig` 与 `installModelSelection`（与 Web
