@@ -12,7 +12,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib"
+    "lib",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {},
   "peerDependencies": {
@@ -21,5 +23,13 @@
   "devDependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grunmin/dsh-acp-enhanced.git"
+  },
+  "homepage": "https://github.com/grunmin/dsh-acp-enhanced",
+  "bugs": {
+    "url": "https://github.com/grunmin/dsh-acp-enhanced/issues"
+  }
 }
