@@ -34,44 +34,37 @@
 
 ## 快速开始
 
-### 0. OpenAI-Responses 网关变体
+两种接入方式，任选其一：
 
-上面的步骤针对 DeepSeek 官方 API（`deepseek-official` + `DEEPSEEK_API_KEY`）。
-如果你是通过 OpenAI-Responses 网关（一个实现了 OpenAI Responses API 的企业级 LLM 网关）
-来访问模型，则可用一个更小的 profile：随附的 `dsh-base` bundle 已经挂载了整套 agent
-栈（spine、sandbox、approval、permission presets、token meter、compaction、fs 工具……），
-因此该 profile 只需添加 `acp-enhanced` 一行、一个默认模型覆写，以及可选的
-`web-search-openrouter` provider。
+- **方式 A（推荐）**：模型走 OpenAI-Responses 网关。`dsh plugin --profile <名> init`
+  自带的 `dsh-base` bundle 已挂载整套 agent 栈，只需 4 步。
+- **方式 B（备用）**：DeepSeek 官方 API，需要手动组装约 30 个包，见文末[备用方案](#备用方案deepseek-官方-api)。
+
+### 方式 A：OpenAI-Responses 网关（4 步）
+
+**第 1 步：创建 profile**（自带 dsh-base bundle；结尾的 pnpm 报错无害，可忽略）
 
 ```sh
-# 1) profile 骨架（bundle = dsh-base；"init" 的 pnpm 报错无害）
 dsh plugin --profile acp-enhanced init
-
-# 2) 安装仓库依赖，并把两个包都链接进 profile
-cd /path/to/dsh-acp-enhanced && pnpm install
-mkdir -p ~/.dsh/profiles/acp-enhanced/node_modules
-ln -s /path/to/dsh-acp-enhanced ~/.dsh/profiles/acp-enhanced/node_modules/dsh-acp-enhanced
-ln -s /path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter \
-  ~/.dsh/profiles/acp-enhanced/node_modules/dsh-web-search-openrouter
-
-# 3) 编写 patch 层（见下）
 ```
 
-`~/.dsh/profiles/acp-enhanced/cordis.patch.yml`（*用户 patch 层* —— 根 `cordis.yml` 在
-每次启动时都会被重写为 `[]`，所以组合在这里，而不是在 `cordis.yml`）：
+**第 2 步：把桥接器链接进 profile**（`link:` 会建符号链接，改动实时生效）
+
+```sh
+dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"
+# 可选：web_search 也走同一个网关
+dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter"
+```
+
+**第 3 步：写一行 patch 指定模型路由**（`~/.dsh/profiles/acp-enhanced/cordis.patch.yml`；
+根 `cordis.yml` 每次启动都会被重写为 `[]`，所以配置写在这里）
 
 ```yaml
+# 聊天默认走哪个 provider/model（必填，两处都要填成同一个值）
 - id: agent-default-model
   config:
     provider: <your-provider-id>
     model: <your-model-id>
-
-# 通过同一个网关路由 web_search：其 OpenAI Responses API 实现了原生
-# `web_search` 工具（返回 `openrouter:web_search` 项），因此无需单独的
-# DeepSeek 搜索 key/endpoint。
-- id: web
-  config:
-    searchProvider: openai-responses
 
 - insert:
     - id: acp-enhanced
@@ -79,10 +72,13 @@ ln -s /path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter \
       config:
         provider: <your-provider-id>
         model: <your-model-id>
-        # 可选：默认只在下拉框里广播 config.provider 的模型（见"设计说明"）。
-        # 多 provider 且都可用时才设为 true。
-        includeAllProviders: false
 
+# 可选：web_search 走同一个网关（装过 dsh-web-search-openrouter 才需要）
+- id: web
+  config:
+    searchProvider: openai-responses
+
+- insert:
     - id: web-search-openrouter
       name: 'dsh-web-search-openrouter'
       config:
@@ -90,30 +86,58 @@ ln -s /path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter \
         baseURL: http://<gateway-host>:<port>/v1
         model: <your-model-id>
         apiKeyEnv: RESPONSES_API_KEY
-        searchContextSize: medium
-        maxOutputTokens: 1024
 ```
 
-为什么要覆写 `agent-default-model`：在任何请求头存在之前，桥接器的按会话选择会先回退到
-`agent-default-model`，而基础行默认是 `deepseek-official`——不覆写的话，提示词会被路由到
-llm-deepseek 并以 *no API key for provider route "deepseek-official"* 失败。
+> 为什么必须覆写 `agent-default-model`：在任何请求头存在之前，桥接器的按会话选择会先回退
+> 到 `agent-default-model`，而基础行默认是 `deepseek-official`——不覆写的话，提示词会被路由
+> 到 llm-deepseek 并以 *no API key for provider route "deepseek-official"* 失败。
 
-Web 搜索是一个**独立包**（`packages/dsh-web-search-openrouter`），不属于 ACP 桥接器：
-该 provider 是一个正交的 `ctx.web` 能力，任何 profile（含 Web GUI）都能挂载。它注册了一个
-id 为 `openai-responses` 的搜索 provider，使用 OpenAI 的 `web_search` 服务端工具调用网关的
-`/responses` 端点；用 `web.searchProvider` 即可选中它。桥接器的 Config 保持干净
-（仅 `provider`/`model`），且 `deepseek-official` provider 在无网关的环境下依然可用。
+**第 4 步：存 key + 注册进 Zed**
 
-Zed 的注册与下面的第 3 步相同；可用下列命令验证：
+先存一次 API key（dsh 凭据服务自动读取；key 名字要匹配你 provider 的 `apiKeyEnv`，
+例如 `RESPONSES_API_KEY` 或 `DEEPSEEK_API_KEY`）：
+
+```sh
+echo "<KEY_NAME>: <key>" >> ~/.dsh/.credentials.yaml && chmod 600 ~/.dsh/.credentials.yaml
+```
+
+然后在 `~/.config/zed/settings.json` 注册 agent。Zed（GUI 应用）会用极简 PATH 拉起 agent
+进程，因此用随附启动器 `scripts/dsh-acp-zed.sh`（它自己会定位 `node`/`dsh`，并可选地从
+运行中的 `dsh web` 进程继承 key）：
+
+```jsonc
+{
+  // ...你已有的设置...
+  "agent_servers": {
+    // 可选：已有的 agent（pi-acp、codex-acp……）不受影响
+    "dsh-acp-enhanced": {
+      "type": "custom",
+      "command": "/bin/bash",
+      "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
+      "env": {}          // 可选：{"<KEY_NAME>": "sk-..."} 覆写
+    }
+  }
+}
+```
+
+Zed 会热重载设置。然后打开 **AI Agent 面板**（右侧边栏，`Cmd+Shift+A`）→ 点面板顶部
+**agent 选择器**（或命令面板 `agent: select agent`）选 **dsh-acp-enhanced** → 输入第一条
+消息即可。回复实时流式返回，状态栏显示上下文用量，面板顶部有 Model / Permission preset /
+Plan mode 配置项与 read-only / workspace-write / full-access 模式。
+
+本地验证（无需 Zed）：
 
 ```sh
 node scripts/acp-client.mjs                          # 期望 ALL CHECKS PASSED
-node scripts/web-search-test.mjs                     # 期望 ALL CHECKS PASSED（web_search 走网关）
+node scripts/web-search-test.mjs                     # 期望 ALL CHECKS PASSED（可选，装了 web_search 时）
 env -i HOME=$HOME PATH=/usr/bin:/bin node scripts/acp-client.mjs \
-  /bin/bash /path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh   # 模拟 Zed 的 spawn 方式
+  /bin/bash /absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh   # 模拟 Zed 的 spawn 方式
 ```
 
-### 1. 创建 profile
+### 备用方案：DeepSeek 官方 API
+
+不走网关时，需要手动组装整套 agent 栈（`dsh-base` bundle 之外的完整包列表），并把随附的
+`profile/cordis.yml` 安装为根配置：
 
 ```sh
 # 一次性 profile 初始化（若 ~/.dsh/profiles/acp-enhanced 已存在则跳过）
@@ -144,63 +168,15 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced" 
   "@deepseek-ai/dsh-agent-instructions@next" "@deepseek-ai/dsh-invariants@next" \
   "@deepseek-ai/dsh-session-query@next" "@deepseek-ai/cordis-plugin-loader@next" \
   "@deepseek-ai/cordis-plugin-include@next" "@deepseek-ai/dsh-app-boot@next" zod
-# 把 profile/cordis.yml 安装进 profile：
+# 把随附的根配置安装进 profile：
 cp profile/cordis.yml ~/.dsh/profiles/acp-enhanced/cordis.yml
 ```
 
-> `link:` 会让你的改动实时生效（pnpm 用符号链接到包）；需要冻结副本则用 `file:`。
+> `link:` 会让你的改动实时生效（符号链接到包）；需要冻结副本则用 `file:`。
 > `@next` 固定为与运行中的 dsh 匹配的 0.1.0-rc.6 版本线。
 
-### 2. 提供 API key
-
-该 profile 通过 dsh 凭据服务解析 `DEEPSEEK_API_KEY`。只需存储一次（等价于 Web Models
-页面所写入的内容）：
-
-```sh
-# ~/.dsh/.credentials.yaml — dsh 以 0600 权限创建并自动读取
-# DEEPSEEK_API_KEY: sk-...
-echo "DEEPSEEK_API_KEY: sk-..." >> ~/.dsh/.credentials.yaml && chmod 600 ~/.dsh/.credentials.yaml
-```
-
-或者在启动环境中导出：
-
-```sh
-export DEEPSEEK_API_KEY=sk-...
-dsh --profile acp-enhanced       # stdout 是 ACP 协议线 — 不要往里打日志
-```
-
-### 3. 在 Zed 中注册
-
-Zed（GUI 应用）会用极简 PATH 来拉起 agent 进程，因此请使用随附的启动器
-`scripts/dsh-acp-zed.sh`——它自己会定位 `node` 和 `dsh`（PATH → npx 缓存 → 全局 npm →
-Homebrew），把 node 目录前置到 PATH，并可选地从正在运行的 `dsh web` 进程继承
-`DEEPSEEK_API_KEY`。
-
-`~/.config/zed/settings.json`：
-
-```jsonc
-{
-  // ...你已有的设置...
-  "agent_servers": {
-    // 可选：已有的 agent（pi-acp、codex-acp……）不受影响
-    "dsh-acp-enhanced": {
-      "type": "custom",
-      "command": "/bin/bash",
-      "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
-      "env": {}          // 可选：{"DEEPSEEK_API_KEY": "sk-..."} 可覆写
-    }
-  }
-}
-```
-
-Zed 会热重载设置。然后在 Zed 界面中：
-
-1. 打开 **AI Agent 面板**（右侧边栏，`Cmd+Shift+A`）。
-2. 点击面板顶部的 **agent 选择器**（或从命令面板执行 `agent: select agent`），选择
-   **dsh-acp-enhanced**。
-3. 首次选择时 agent 进程会被拉起。输入一条消息——回复会实时流式返回，上下文仪表
-   （`usage_update`）跟踪 used/size，面板会暴露 **Model**、**Reasoning effort** 和
-   **Permission preset** 配置项，以及 read-only / workspace-write / full-access 模式。
+API key 存 `~/.dsh/.credentials.yaml`（`DEEPSEEK_API_KEY: sk-...`，`chmod 600`），或在启动
+环境中 `export DEEPSEEK_API_KEY=sk-...`；Zed 注册与上面的第 4 步相同。
 
 ### 故障排查
 
