@@ -87,6 +87,10 @@ try {
   })
   check('agent advertises loadSession', init.agentCapabilities?.loadSession === true,
     JSON.stringify(init.agentCapabilities?.loadSession))
+  check('agent advertises session/list + session/delete',
+    init.agentCapabilities?.sessionCapabilities?.list !== undefined
+      && init.agentCapabilities?.sessionCapabilities?.delete !== undefined,
+    JSON.stringify(init.agentCapabilities?.sessionCapabilities))
   const loaded = await c2.loadSession({ sessionId: sid, cwd: process.cwd(), mcpServers: [] })
   check('session/load returns config', Array.isArray(loaded.configOptions) && loaded.configOptions.length >= 2,
     JSON.stringify((loaded.configOptions ?? []).map((o) => o.id)))
@@ -104,6 +108,19 @@ try {
     prompt: [{ type: 'text', text: '接着说一句话' }],
   })
   check('resumed agent accepts a follow-up', p2.stopReason === 'end_turn', p2.stopReason)
+
+  // ── session/list + session/delete ─────────────────────────────────────────
+  const listed = await c2.listSessions({ cwd: process.cwd() })
+  const entry = (listed.sessions ?? []).find((s) => s.sessionId === sid)
+  check('session/list returns the persisted session', entry !== undefined,
+    JSON.stringify((listed.sessions ?? []).map((s) => ({ id: s.sessionId, title: s.title, cwd: s.cwd }))))
+  check('listed session carries a title and cwd', typeof entry?.title === 'string' && entry.title.length > 0 && entry.cwd === process.cwd(),
+    JSON.stringify(entry))
+  await c2.deleteSession({ sessionId: sid })
+  const after = await c2.listSessions({ cwd: process.cwd() })
+  check('session/delete removes it from the list', !(after.sessions ?? []).some((s) => s.sessionId === sid),
+    JSON.stringify((after.sessions ?? []).map((s) => s.sessionId)))
+
   child.kill('SIGTERM')
   await new Promise((r) => setTimeout(r, 500))
 

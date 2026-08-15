@@ -24,6 +24,7 @@
 | **Zed 表单提问** | 注册 `ask_user_question` 工具 + `userQuestions` provider，转发为 `elicitation/create`（form 模式） | DSH 需要用户确认/选择时，问题以 **Zed 原生表单** 弹出，选项即点即答 |
 | **Plan 面板** | `plan_mode` 布尔配置项（Zed 侧开关）+ `plan/mode` 事件映射为 ACP `plan` update | Zed 底部出现 **Plan 状态条**：plan mode 开时显示"规划中"，关时清空 |
 | **会话恢复（resume）** | 声明 `loadSession` 能力 + `session/load` 走 `agents.resume` 加载持久化会话，并把历史回放为 `user_message_chunk` / `agent_message_chunk` / `tool_call` | 在 Zed 里可以**继续之前的对话线程**（长排查不丢上下文） |
+| **会话归档列表** | 声明 `sessionCapabilities.list/delete`；`session/list` 从持久化存储（`ctx.sessionPersistence.list()`）枚举会话（标题从存储日志的 `session/title` 事件读取），`session/delete` 释放在线 agent 并删除其持久化目录；`session/title` / `turn/end` 实时推送 `session_info_update` | Zed 的**历史线程归档**能看到本项目的全部会话（带标题、按更新时间排序），可点击恢复，也可删除 |
 | **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
 
 > **仓库结构** —— 本仓库包含两个相互独立的包：
@@ -275,11 +276,21 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   `user_message_chunk`，`assistant/message` 的文本 → `agent_message_chunk`，
   `tool/call`/`tool/result` → `tool_call`/`tool_call_update`。Zed 在线程插入后才完成 load
   RPC，所以回放通知能被线程接收。回放完成后该会话与新建会话一样支持继续 prompt。
+- **会话归档列表（session/list + session/delete）**：`initialize` 声明
+  `sessionCapabilities: { list: {}, delete: {} }`；`session/list` 用
+  `ctx.sessionPersistence.list()` 枚举已物化的会话（`SessionHeader`：id/cwd/createdAt），
+  标题优先取实时 `session/title` 事件记录，缺失时用 `persistence.readRaw(id)` 扫存储日志里
+  最后一个 `session/title` 事件（>8MB 的日志跳过）；按 `updatedAt` 倒序返回。`session/delete`
+  先释放在线 agent（`sessions.delete` + `dispose`），再通过 `persistence.locate(header)` 拿到
+  该会话目录物理路径并整体删除——注意 dsh 持久化面**没有官方的删除 API**，这一步是直接删
+  后端目录。实时标题/活动变化通过 `session_info_update` 通知推送（`session/title` 与
+  `turn/end` 事件）。
 - **空 effort 抑制**：当前路由模型不暴露 reasoning efforts 时，不广播 `reasoning_effort`
   配置项——Zed 就不会渲染一个空的、无法操作的"Reasoning effort"chip。切到带 efforts 的
   模型后该选项自动重新出现（每次切换都会重播 `config_option_update`）。
 - **模式**：权限预设被呈现为 ACP 会话模式，因此 Zed 的模式切换器驱动 sandbox/approval 预设。
 - **已知限制**（继承自官方桥接器）：仅 baseline prompt（无图片/音频/MCP 附件）、不支持
   `additionalDirectories`/MCP server 附加、已确认文本按块粒度流式，且每个会话同时只能有一个
-  in-flight prompt。会话恢复已支持（见上），但"恢复后同一连接内不能有两个同名会话记录"等
-  边界由 `session/load` 的 live-session 短路处理。
+  in-flight prompt。会话恢复与归档列表已支持（见上），但 `session/close` / `session/fork` /
+  `session/resume` 未实现（不声明能力，合规客户端不会调用）；`session/delete` 因 dsh 持久化
+  面没有官方删除 API，采用直接删除后端目录的方式。
