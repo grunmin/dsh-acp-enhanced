@@ -19,6 +19,9 @@
 | **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（当前模型路由可用的强度） | 配置项 UI |
 | **权限预设** | `session/set_config_option`（`permission_preset`）**以及**通过 `session/set_mode` 的 ACP 会话模式 | 模式切换器 / 配置项 UI |
 | **审批** | `session/request_permission`（每个工具调用 allow-once / reject-once） | 原生审批弹窗 |
+| **Zed 客户端文件工具** | agent 侧注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`，转发为 `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | 文件编辑出现在 agent 面板的 **"编辑文件"区（带 diff + 接受/拒绝）**；命令跑在 **Zed 真实终端** 里 |
+| **Zed 表单提问** | 注册 `ask_user_question` 工具 + `userQuestions` provider，转发为 `elicitation/create`（form 模式） | DSH 需要用户确认/选择时，问题以 **Zed 原生表单** 弹出，选项即点即答 |
+| **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
 
 > **仓库结构** —— 本仓库包含两个相互独立的包：
 > - `dsh-acp-enhanced`（仓库根目录）：增强版 ACP 桥接器（`lib/index.js`）。
@@ -73,6 +76,9 @@ ln -s /path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter \
       config:
         provider: <your-provider-id>
         model: <your-model-id>
+        # 可选：默认只在下拉框里广播 config.provider 的模型（见"设计说明"）。
+        # 多 provider 且都可用时才设为 true。
+        includeAllProviders: false
 
     - id: web-search-openrouter
       name: 'dsh-web-search-openrouter'
@@ -200,6 +206,7 @@ Zed 会热重载设置。然后在 Zed 界面中：
 | `Server exited with status 127` / `exec: dsh: not found` | Zed 的 PATH 缺少 `node`/`dsh`。请用随附的 `dsh-acp-zed.sh` 启动器（它会解析两者）；可用 `bash scripts/dsh-acp-zed.sh` 在干净 shell 中验证。 |
 | `no API key for provider route "deepseek-official"` | 无法解析 key。写入 `~/.dsh/.credentials.yaml`（见第 2 步），或在 agent_servers 条目里设置 `env.DEEPSEEK_API_KEY`。 |
 | 编辑设置后 agent 未出现 | 执行 `zed: reload settings`（命令面板）或重启 Zed。 |
+| 在 Zed 里"无法切换模型"或"上下文用量不显示" | 通常是选到了不可路由的幽灵 provider（如某些环境 上仍挂载的 `deepseek-official`）。本桥接器默认已过滤幽灵分组（只广播 `config.provider` 模型），若仍出现请确认 profile 的 `config.provider` 指向真实可用的路由，并把被污染的 `agent-default-model` 默认重置回该路由。见"设计说明"。 |
 | `session/new` 报 `additionalDirectories is not supported` | ACP 桥接器仅支持 baseline；Zed 默认不会发送额外目录——若自定义配置发送了就移除它。 |
 | 需要详细诊断 | 用 `ACP_DEBUG=1 dsh --profile acp-enhanced` 启动（stderr 上的生命周期 trace）。 |
 
@@ -208,11 +215,17 @@ Zed 会热重载设置。然后在 Zed 界面中：
 ```sh
 node scripts/acp-client.mjs           # 端到端冒烟测试（需要 DEEPSEEK_API_KEY）
 DEEPSEEK_API_KEY=... node scripts/acp-client.mjs
+node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal 能力）
 ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
 ```
 
 该冒烟客户端驱动 initialize → session/new → prompt（验证块级流式、`usage_update`、
 `tool_call`）、配置项与模式切换、切换后的第二次 prompt，以及 `session/cancel`。
+`acp-client-tools.mjs` 用 SDK 的 `ClientSideConnection` 模拟 Zed：声明
+`fs.readTextFile/writeTextFile/terminal/elicitation` 能力，验证模型调用 `zed_*` 工具时请求以
+`fs/write_text_file`、`fs/read_text_file`、`terminal/create` 正确到达客户端，`ask_user_question`
+以 `elicitation/create` 表单（含 enum 选项）到达客户端，并验证无 reasoning efforts 的路由
+不再广播空 `reasoning_effort` 选项。
 
 ## 设计说明
 
@@ -226,6 +239,33 @@ ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
   `resolveModelInfo`），`reasoning_effort` 下拉框枚举当前路由的可用强度，`permission_preset`
   枚举已挂载的预设。修改走 `llm.resolveCallConfig` 与 `installModelSelection`（与 Web
   api-proxy 使用的同一机制）或 `permissionPresets.apply` 写路径。
+- **模型目录过滤（`includeAllProviders`，默认关）**：默认只广播 `config.provider` 的模型，
+  避免把"幽灵 provider"（已挂载但不可路由的适配器，例如聊天走网关时仍挂着的官方
+  `deepseek-official`）列进下拉框。这些模型在列表里看起来可切换，但一旦选中，后续每次
+  prompt 都会以 `MISSING_CREDENTIAL`（`no API key for provider route "xxx"`）失败——在
+  Zed 里表现为"无法切换模型、且因 turn 失败而不再收到 `usage_update`，上下文用量不显示"
+  （Web GUI 会对不可路由的当前项显示 unavailable 横幅，Zed 没有，所以同样的数据在 Zed
+  里看起来就是坏的）。需要多 provider 都可用时设 `includeAllProviders: true`。
+- **默认模型不被污染**：`applySelection` 只有在 `selected.provider === config.provider`（或
+  显式 `includeAllProviders`）时才把新选择持久化为 `agent-default-model` 默认值。否则一次
+  误切到不可路由的 provider 只会作用于当前会话，不会写坏后续所有新会话的默认路由。
+- **客户端转发工具（Zed fs / terminal）**：`initialize` 时读取 `clientCapabilities`，仅在客户端
+  声明对应能力时，向 agent 注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
+  三个工具（`ctx.tools.register` + `defineTool`）。工具体通过 `conn.readTextFile` /
+  `conn.writeTextFile` / `conn.createTerminal` 把请求转发给编辑器：`zed_write_text_file` 让
+  文件编辑落在 Zed 自己的 buffer 上，出现在 agent 面板的"编辑文件"区（diff + 接受/拒绝）；
+  `zed_terminal` 让命令跑在 Zed 真实终端里并轮询输出（`terminal/output` 是累计内容，取最后
+  一次即可），120s 超时后 kill。无这些能力的客户端（如纯自动化测试）不会看到这些工具。
+- **Zed 表单提问（elicitation）**：客户端声明 `elicitation.form` 时，桥接器注册
+  `ask_user_question` 工具（复刻 `dsh-tool-ask-user` 的定义，走 `ctx.userQuestions` seam）
+  以及对应的 UI provider：把问题映射成 ACP `elicitation/create`（form 模式）的 JSON Schema
+  （单选 → `string`+`enum`，多选 → `array`，无选项 → 裸 `string`），用户在 Zed 里以原生
+  表单作答后，答案映射回 `AskUserQuestionAnswer` 喂回模型。decline/cancel 会以错误结束该次
+  工具调用，模型可据此改道。注意 Zed 的 elicitation 能力是对象（`form: {}`）而非布尔，
+  判断用"存在"而非 `=== true`。
+- **空 effort 抑制**：当前路由模型不暴露 reasoning efforts 时，不广播 `reasoning_effort`
+  配置项——Zed 就不会渲染一个空的、无法操作的"Reasoning effort"chip。切到带 efforts 的
+  模型后该选项自动重新出现（每次切换都会重播 `config_option_update`）。
 - **模式**：权限预设被呈现为 ACP 会话模式，因此 Zed 的模式切换器驱动 sandbox/approval 预设。
 - **已知限制**（继承自官方桥接器）：仅全新会话（无 load/resume）、仅 baseline prompt（无
   图片/音频/MCP）、已确认文本按块粒度流式，且每个会话同时只能有一个 in-flight prompt。

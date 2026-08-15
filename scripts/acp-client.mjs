@@ -78,7 +78,7 @@ try {
   const created = await rpc('session/new', { cwd: process.cwd(), mcpServers: [] })
   const sessionId = created.sessionId
   check('session/new returns a session id', typeof sessionId === 'string' && sessionId.length > 0)
-  check('session/new advertises config options', Array.isArray(created.configOptions) && created.configOptions.length >= 3,
+  check('session/new advertises config options', Array.isArray(created.configOptions) && created.configOptions.length >= 2,
     JSON.stringify((created.configOptions ?? []).map((o) => o.id)))
   check('session/new advertises permission modes', created.modes?.availableModes?.length >= 3,
     JSON.stringify(created.modes?.availableModes?.map((m) => m.id)))
@@ -86,8 +86,9 @@ try {
   check('model option is a select with choices', modelOption?.type === 'select' && modelOption?.options?.length > 0,
     `current=${modelOption?.currentValue}`)
   const effortOption = (created.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
-  check('reasoning_effort option present', effortOption !== undefined,
-    `current=${effortOption?.currentValue ?? '(unset)'}`)
+  // reasoning_effort is only advertised when the routed model exposes efforts;
+  // absence on a no-effort route is correct (an empty dropdown chip is worse).
+  console.log(`INFO  reasoning_effort option present: ${effortOption !== undefined}${effortOption !== undefined ? ` current=${effortOption.currentValue}` : ' (route exposes no efforts)'}`)
   const presetOption = (created.configOptions ?? []).find((o) => o.id === 'permission_preset')
   check('permission_preset option present', presetOption !== undefined,
     `current=${presetOption?.currentValue ?? '(unset)'}`)
