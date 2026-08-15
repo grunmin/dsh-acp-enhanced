@@ -23,7 +23,7 @@ const args = rest.length > 0 ? rest : ['--profile', 'acp-enhanced']
 const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
 const stream = ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout))
 
-const received = { writes: [], reads: [], terminals: [], elicitations: [] }
+const received = { writes: [], reads: [], terminals: [], elicitations: [], plans: [] }
 
 // Tap the raw stream: log every non-session/update line so request/response
 // traffic (fs/..., terminal/...) is visible.
@@ -43,6 +43,10 @@ const client = {
     const kind = params?.update?.sessionUpdate
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       console.log('CLIENT session/update:', kind, params?.update?.title ?? params?.update?.status)
+    }
+    if (kind === 'plan') {
+      received.plans.push(params.update)
+      console.log('CLIENT session/update: plan', JSON.stringify(params.update).slice(0, 140))
     }
   },
   async writeTextFile(params) {
@@ -111,6 +115,33 @@ try {
     JSON.stringify(optionIds))
   check('empty reasoning_effort option suppressed', !optionIds.includes('reasoning_effort'),
     JSON.stringify(optionIds))
+  const planModeOption = (created.configOptions ?? []).find((o) => o.id === 'plan_mode')
+  check('plan_mode boolean option advertised', planModeOption?.type === 'boolean' && planModeOption?.currentValue === false,
+    JSON.stringify(planModeOption))
+
+  // ── plan mode toggle → ACP Plan update ────────────────────────────────────
+  const toggled = await conn.setSessionConfigOption({
+    sessionId,
+    configId: 'plan_mode',
+    type: 'boolean',
+    value: true,
+  })
+  check('plan_mode toggle returns options reflecting on',
+    toggled.configOptions?.find((o) => o.id === 'plan_mode')?.currentValue === true)
+  await new Promise((r) => setTimeout(r, 300)) // let the plan notification drain
+  check('plan update emitted with an entry', received.plans.length >= 1 && received.plans.at(-1)?.entries?.length === 1,
+    JSON.stringify(received.plans.at(-1)))
+  const off = await conn.setSessionConfigOption({
+    sessionId,
+    configId: 'plan_mode',
+    type: 'boolean',
+    value: false,
+  })
+  check('plan_mode toggle returns options reflecting off',
+    off.configOptions?.find((o) => o.id === 'plan_mode')?.currentValue === false)
+  await new Promise((r) => setTimeout(r, 300))
+  check('plan cleared when plan mode leaves', received.plans.at(-1)?.entries?.length === 0,
+    JSON.stringify(received.plans.at(-1)))
 
   // ── prompt 1: write through the editor ───────────────────────────────────
   const p1 = await conn.prompt({

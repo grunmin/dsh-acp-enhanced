@@ -21,6 +21,7 @@
 | **审批** | `session/request_permission`（每个工具调用 allow-once / reject-once） | 原生审批弹窗 |
 | **Zed 客户端文件工具** | agent 侧注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`，转发为 `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | 文件编辑出现在 agent 面板的 **"编辑文件"区（带 diff + 接受/拒绝）**；命令跑在 **Zed 真实终端** 里 |
 | **Zed 表单提问** | 注册 `ask_user_question` 工具 + `userQuestions` provider，转发为 `elicitation/create`（form 模式） | DSH 需要用户确认/选择时，问题以 **Zed 原生表单** 弹出，选项即点即答 |
+| **Plan 面板** | `plan_mode` 布尔配置项（Zed 侧开关）+ `plan/mode` 事件映射为 ACP `plan` update | Zed 底部出现 **Plan 状态条**：plan mode 开时显示"规划中"，关时清空 |
 | **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
 
 > **仓库结构** —— 本仓库包含两个相互独立的包：
@@ -224,8 +225,8 @@ ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
 `acp-client-tools.mjs` 用 SDK 的 `ClientSideConnection` 模拟 Zed：声明
 `fs.readTextFile/writeTextFile/terminal/elicitation` 能力，验证模型调用 `zed_*` 工具时请求以
 `fs/write_text_file`、`fs/read_text_file`、`terminal/create` 正确到达客户端，`ask_user_question`
-以 `elicitation/create` 表单（含 enum 选项）到达客户端，并验证无 reasoning efforts 的路由
-不再广播空 `reasoning_effort` 选项。
+以 `elicitation/create` 表单（含 enum 选项）到达客户端，`plan_mode` 布尔开关触发 ACP `plan`
+update（开→条目、关→清空），并验证无 reasoning efforts 的路由不再广播空 `reasoning_effort`。
 
 ## 设计说明
 
@@ -263,6 +264,11 @@ ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
   表单作答后，答案映射回 `AskUserQuestionAnswer` 喂回模型。decline/cancel 会以错误结束该次
   工具调用，模型可据此改道。注意 Zed 的 elicitation 能力是对象（`form: {}`）而非布尔，
   判断用"存在"而非 `=== true`。
+- **Plan 面板**：`plan_mode` 布尔配置项走 `ctx.planMode.set(agent, active)` 切换 DSH plan
+  mode（Zed 的布尔开关即点即用）；`session/event` 里的 `plan/mode` 翻转被映射为 ACP `plan`
+  update——开时一条"规划中"条目，关时清空。DSH 的 plan mode 没有结构化任务列表，所以这是
+  状态指示而非任务清单。注意 ACP 的 `plan` update 是**扁平**形状
+  （`{ sessionUpdate: 'plan', entries: [...] }`），不是 `{ plan: {...} }`。
 - **空 effort 抑制**：当前路由模型不暴露 reasoning efforts 时，不广播 `reasoning_effort`
   配置项——Zed 就不会渲染一个空的、无法操作的"Reasoning effort"chip。切到带 efforts 的
   模型后该选项自动重新出现（每次切换都会重播 `config_option_update`）。
