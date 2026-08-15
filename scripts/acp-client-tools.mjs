@@ -161,10 +161,28 @@ try {
     check('write carries path+content', w.path === '/tmp/acp-client-tools-test.txt' && w.content === 'hello acp',
       JSON.stringify({ path: w.path, content: w.content }))
   }
-  // tool_call notifications must carry the arguments (rawInput) and kind so
-  // the editor can show what the tool is actually doing.
+
+  // ── prompt 1b: the plain bash tool (the case the user hit: card showed
+  //    "bash" but no command). bash is NOT a terminal, so kind must stay
+  //    'other' and rawInput must carry the exact command. ────────────────────
+  const pb = await conn.prompt({
+    sessionId,
+    prompt: [{
+      type: 'text',
+      text: '使用 bash 工具运行命令 "echo bash-ok"。不要用其他工具。',
+    }],
+  })
+  check('bash prompt settles', pb.stopReason === 'end_turn', `stopReason=${pb.stopReason}`)
+  const bashCall = received.toolCalls.find((t) => t.update.title === 'bash')
+  check('bash tool_call kind keeps rawInput visible', bashCall?.update?.kind === 'other',
+    JSON.stringify(bashCall?.update?.kind))
+  check('bash tool_call rawInput carries the command',
+    typeof bashCall?.update?.rawInput?.command === 'string' && bashCall.update.rawInput.command.includes('echo bash-ok'),
+    JSON.stringify(bashCall?.update?.rawInput))
+  // tool_call notifications must carry the arguments (rawInput) and a kind
+  // that does NOT hide rawInput (Zed hides it for 'execute'/'edit' kinds).
   const writeCall = received.toolCalls.find((t) => t.update.title === 'zed_write_text_file')
-  check('tool_call carries kind for edits', writeCall?.update?.kind === 'edit',
+  check('tool_call kind keeps rawInput visible for writes', writeCall?.update?.kind === 'other',
     JSON.stringify(writeCall?.update?.kind))
   check('tool_call carries rawInput for the write', writeCall?.update?.rawInput?.path === '/tmp/acp-client-tools-test.txt',
     JSON.stringify(writeCall?.update?.rawInput))
