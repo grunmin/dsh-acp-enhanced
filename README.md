@@ -27,6 +27,22 @@
 | **会话归档列表** | 声明 `sessionCapabilities.list/delete`；`session/list` 从持久化存储（`ctx.sessionPersistence.list()`）枚举会话（标题从存储日志的 `session/title` 事件读取），`session/delete` 释放在线 agent 并删除其持久化目录；`session/title` / `turn/end` 实时推送 `session_info_update` | Zed 的**历史线程归档**能看到本项目的全部会话（带标题、按更新时间排序），可点击恢复，也可删除 |
 | **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
 
+## 效果预览
+
+在 Zed 的 AI Agent 面板中选择 **dsh-acp-enhanced** 后，你会看到：
+
+<img src="assets/screenshots/approval-config-context.png" alt="审批弹窗与模型/推理强度切换、上下文环" width="560">
+
+- 工具调用需要许可时弹出**原生审批弹窗**（allow-once / reject-once）；输入框下方是
+  **模型**、**推理强度**、**权限预设**、**Plan mode** 配置项与**上下文用量环**
+  （`usage_update` 遥测，含缓存命中率、TPS 等明细）。
+
+<img src="assets/screenshots/tool-cards-elicitation.png" alt="工具调用入参与输出、Zed 原生提问表单" width="320">
+
+- **工具卡片**可展开查看每次调用的完整入参（如 bash 执行的命令）与结果预览
+  （`rawInput` / `rawOutput`）；DSH 需要你确认或选择时，以 **Zed 原生表单**弹出
+  （`ask_user_question` → `elicitation/create`），选项即点即答，无需手动输入。
+
 > **仓库结构** —— 本仓库包含两个相互独立的包：
 > - `dsh-acp-enhanced`（仓库根目录）：增强版 ACP 桥接器（`lib/index.js`）。
 > - `packages/dsh-web-search-openrouter/`：独立的 `ctx.web` 搜索 provider，让 `web_search`
@@ -42,16 +58,21 @@ patch 会插入 `acp-enhanced` 行并覆写默认模型路由，**全程无需�
 
 ### 安装（2 步）
 
-**第 1 步：安装**（在含 `dsh-acp-enhanced` 的目录执行；`link:` 让改动实时生效）
+**第 1 步：安装**（从 npm registry 安装，无需下载源码）
 
 ```sh
-dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"
+dsh plugin --profile acp-enhanced add dsh-acp-enhanced
 ```
+
+> 开发/改源码时改用 `link:` 指向本地 checkout（改动实时生效，跳过 registry）：
+> `dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"`
 
 **第 2 步：注册进 Zed**（模型路由与凭据全部通过 `env` 传入，无需写 patch）
 
 在 `~/.config/zed/settings.json` 的 `agent_servers` 里注册。Zed（GUI 应用）会用极简 PATH
-拉起 agent 进程，因此用随附启动器 `scripts/dsh-acp-zed.sh`（它自己会定位 `node`/`dsh`）：
+拉起 agent 进程，因此用随附启动器 `scripts/dsh-acp-zed.sh`（它自己会定位 `node`/`dsh`）。
+
+#### 最常见：DeepSeek 官方 API（默认路由）
 
 ```jsonc
 {
@@ -62,22 +83,56 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"
       "command": "/bin/bash",
       "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
       "env": {
-        "DSH_ACP_PROVIDER": "<your-provider-id>",   // 必填：模型路由的 provider
-        "DSH_ACP_MODEL": "<your-model-id>",          // 必填：模型 id
-        "<KEY_ENV_NAME>": "<key>"                    // 必填：provider 的 API key
+        "DSH_ACP_PROVIDER": "deepseek-official",  // 官方 provider id
+        "DSH_ACP_MODEL": "deepseek-v4-flash"      // 官方模型 id
       }
     }
   }
 }
 ```
 
-> **三个 env 的含义**：`DSH_ACP_PROVIDER`/`DSH_ACP_MODEL` 决定聊天走哪个模型路由（包自带
-> patch 读这两个变量，缺省回落到 `deepseek-official`/`deepseek-v4-flash`）。`<KEY_ENV_NAME>`
-> 是 provider 声明读取的 key 环境变量名（DeepSeek 官方是 `DEEPSEEK_API_KEY`；网关适配器
-> 通常有自己的 `apiKeyEnv`）——也可以不写在 Zed 里，而是存进 `~/.dsh/.credentials.yaml`
-> 由 dsh 凭据服务统一管理。路由换哪种模型都走同一条安装路径，只是 env 值不同：DeepSeek
-> 官方 API 填 `deepseek-official`/`deepseek-v4-flash` + `DEEPSEEK_API_KEY`；通过
-> OpenAI-Responses 网关访问模型时，则填网关暴露的 provider/model + 网关要求的 key。
+> 这是本项目作者日常使用的配置（macOS）。`DSH_ACP_PROVIDER` / `DSH_ACP_MODEL` 与包自带
+> patch 的缺省值（`deepseek-official` / `deepseek-v4-flash`）一致，**所以也可以直接省略**
+> ——显式写上只是让路由意图在 Zed 配置里一目了然。API key 不必写进 Zed：写入
+> `~/.dsh/.credentials.yaml`（`DEEPSEEK_API_KEY`，600 权限）由 dsh 凭据服务解析即可；
+> 启动脚本还会兜底继承正在运行的 `dsh web` 进程的 key。
+
+可选：固定面板默认项（模型 / plan mode / 推理强度；都可以随时在面板里改，这只是初始值）：
+
+```jsonc
+"dsh-acp-enhanced": {
+  // ...上面的 type/command/args/env...
+  "default_config_options": {
+    "model": "deepseek-official/deepseek-v4-flash",
+    "plan_mode": false,
+    "reasoning_effort": "high"
+  },
+  "favorite_config_option_values": {
+    "model": ["deepseek-official/deepseek-v4-flash", "deepseek-official/deepseek-v4-pro"]
+  }
+}
+```
+
+#### 扩展：走 OpenAI-Responses 网关（如公司内部模型网关）
+
+同一安装路径，只是 env 换成网关暴露的 provider/model 与它要求的 key 环境变量名：
+
+```jsonc
+"dsh-acp-enhanced": {
+  "type": "custom",
+  "command": "/bin/bash",
+  "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
+  "env": {
+    "DSH_ACP_PROVIDER": "<gateway-provider-id>",  // 网关暴露的 provider id
+    "DSH_ACP_MODEL": "<gateway-model-id>",         // 网关暴露的 model id
+    "<KEY_ENV_NAME>": "<key>"                      // 网关声明读取的 key 环境变量名
+  }
+}
+```
+
+> `<KEY_ENV_NAME>` 是 provider 声明读取的 key 环境变量名（网关适配器通常有自己的
+> `apiKeyEnv`）；同样可以不写在 Zed 里，而是存进 `~/.dsh/.credentials.yaml` 由凭据服务
+> 统一管理。路由换哪种模型都走同一条安装路径，只是 env 值不同。
 
 Zed 会热重载设置。打开 **AI Agent 面板**（`Cmd+Shift+A`）→ 顶部 **agent 选择器** 选
 **dsh-acp-enhanced** → 输入第一条消息即可。回复实时流式返回，状态栏显示上下文用量，面板
@@ -87,7 +142,8 @@ full-access 模式，线程归档里能看到并恢复历史会话。
 本地验证（无需 Zed）：
 
 ```sh
-DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # 期望 ALL CHECKS PASSED
+node scripts/acp-client.mjs                    # 官方默认路由，无需 env；期望 ALL CHECKS PASSED
+DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # 自定义路由时再传
 env -i HOME=$HOME PATH=/usr/bin:/bin node scripts/acp-client.mjs \
   /bin/bash /absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh  # 模拟 Zed 的 spawn 方式
 ```

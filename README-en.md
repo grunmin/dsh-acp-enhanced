@@ -27,6 +27,24 @@ controls. This project is a drop-in replacement that surfaces what the Web GUI h
 | **Session archive list** | `sessionCapabilities.list/delete`; `session/list` enumerates persisted sessions via `ctx.sessionPersistence.list()` (titles read from `session/title` events in the stored log), `session/delete` disposes the live agent and removes its persisted directory; `session/title` / `turn/end` push live `session_info_update`s | The **thread archive** shows all sessions (titled, sorted by last activity) — click to resume, delete to remove |
 | **Empty-option suppression** | no `reasoning_effort` option is advertised when the routed model exposes no efforts | No empty, unclickable "Reasoning effort" chip |
 
+## Preview
+
+After picking **dsh-acp-enhanced** in Zed's AI Agent panel, you get:
+
+<img src="assets/screenshots/approval-config-context.png" alt="Approval popup, model/reasoning-effort switches, context ring" width="560">
+
+- Tool calls that need permission pop a **native approval prompt** (allow-once /
+  reject-once); below the input box sit the **model**, **reasoning effort**,
+  **permission preset**, and **plan mode** config options plus the **context usage
+  ring** (`usage_update` telemetry with cache hit rate, TPS, and more).
+
+<img src="assets/screenshots/tool-cards-elicitation.png" alt="Tool call inputs and outputs, native Zed question form" width="320">
+
+- **Tool cards** expand to show each call's full arguments (e.g. the exact bash
+  command) and the result preview (`rawInput` / `rawOutput`); when dsh needs your
+  confirmation or a choice, the question arrives as a **native Zed form**
+  (`ask_user_question` → `elicitation/create`) — click an option, no typing.
+
 > **Repository layout** — this repo contains two independent packages:
 > - `dsh-acp-enhanced` (repo root): the enhanced ACP bridge (`lib/index.js`).
 > - `packages/dsh-web-search-openrouter/`: a standalone `ctx.web` search provider that
@@ -45,19 +63,24 @@ so installation is identical to any official bundle: **one command** —
 
 ### Install (2 steps)
 
-**Step 1 — install** (run in a directory containing `dsh-acp-enhanced`; `link:` keeps
-your edits live):
+**Step 1 — install** (from the npm registry; no source checkout needed):
 
 ```sh
-dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"
+dsh plugin --profile acp-enhanced add dsh-acp-enhanced
 ```
+
+> When hacking on the code itself, use `link:` to a local checkout instead (live
+> edits, no registry round-trip):
+> `dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"`
 
 **Step 2 — register in Zed** (the model route and credentials all come from `env`; no
 patch to write)
 
 Register the agent under `agent_servers` in `~/.config/zed/settings.json`. Zed (a GUI
 app) spawns agent processes with a minimal PATH, so use the shipped launcher
-`scripts/dsh-acp-zed.sh` (it locates `node`/`dsh` itself):
+`scripts/dsh-acp-zed.sh` (it locates `node`/`dsh` itself).
+
+#### Most common: DeepSeek official API (the default route)
 
 ```jsonc
 {
@@ -68,24 +91,61 @@ app) spawns agent processes with a minimal PATH, so use the shipped launcher
       "command": "/bin/bash",
       "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
       "env": {
-        "DSH_ACP_PROVIDER": "<your-provider-id>",   // required: provider for the model route
-        "DSH_ACP_MODEL": "<your-model-id>",          // required: model id
-        "<KEY_ENV_NAME>": "<key>"                    // required: the provider's API key
+        "DSH_ACP_PROVIDER": "deepseek-official",  // the official provider id
+        "DSH_ACP_MODEL": "deepseek-v4-flash"      // the official model id
       }
     }
   }
 }
 ```
 
-> **What the three env vars mean**: `DSH_ACP_PROVIDER` / `DSH_ACP_MODEL` choose the
-> model route (the shipped patch reads both, falling back to
-> `deepseek-official` / `deepseek-v4-flash`). `<KEY_ENV_NAME>` is the env var the
-> provider reads for its key (DeepSeek official is `DEEPSEEK_API_KEY`; gateway
-> adapters usually declare their own `apiKeyEnv`) — alternatively store it in
+> This is the setup the author uses daily (macOS). `DSH_ACP_PROVIDER` / `DSH_ACP_MODEL`
+> match the shipped patch's defaults (`deepseek-official` / `deepseek-v4-flash`), so
+> **both can be omitted entirely** — writing them out just makes the route explicit in
+> your Zed config. The API key does not have to live in Zed: store it in
+> `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`, mode 600) and the dsh credentials
+> service resolves it; the launcher additionally falls back to inheriting the key from
+> a running `dsh web` process.
+
+Optional: pin the panel's default config options (model / plan mode / reasoning
+effort; all still changeable in the panel at any time):
+
+```jsonc
+"dsh-acp-enhanced": {
+  // ...the type/command/args/env above...
+  "default_config_options": {
+    "model": "deepseek-official/deepseek-v4-flash",
+    "plan_mode": false,
+    "reasoning_effort": "high"
+  },
+  "favorite_config_option_values": {
+    "model": ["deepseek-official/deepseek-v4-flash", "deepseek-official/deepseek-v4-pro"]
+  }
+}
+```
+
+#### Extended: route through an OpenAI-Responses gateway (e.g. a company model gateway)
+
+Same install path; only the env values change to the provider/model the gateway
+exposes plus the key env var it requires:
+
+```jsonc
+"dsh-acp-enhanced": {
+  "type": "custom",
+  "command": "/bin/bash",
+  "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
+  "env": {
+    "DSH_ACP_PROVIDER": "<gateway-provider-id>",  // provider id exposed by the gateway
+    "DSH_ACP_MODEL": "<gateway-model-id>",         // model id exposed by the gateway
+    "<KEY_ENV_NAME>": "<key>"                      // the key env var the gateway reads
+  }
+}
+```
+
+> `<KEY_ENV_NAME>` is the env var the provider reads for its key (gateway adapters
+> usually declare their own `apiKeyEnv`) — alternatively store it in
 > `~/.dsh/.credentials.yaml` and let the dsh credentials service manage it. Every
-> route uses the same install path; only the env values differ: DeepSeek official
-> uses `deepseek-official`/`deepseek-v4-flash` + `DEEPSEEK_API_KEY`; an
-> OpenAI-Responses gateway uses the provider/model it exposes + the key it requires.
+> route uses the same install path; only the env values differ.
 
 Zed hot-reloads settings. Open the **AI Agent panel** (`Cmd+Shift+A`) → pick
 **dsh-acp-enhanced** in the top **agent selector** → send your first message. Replies
@@ -96,7 +156,8 @@ full-access modes; the thread archive lists and resumes past sessions.
 Verify locally (no Zed needed):
 
 ```sh
-DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # expect ALL CHECKS PASSED
+node scripts/acp-client.mjs                    # official default route, no env; expect ALL CHECKS PASSED
+DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # only for a custom route
 env -i HOME=$HOME PATH=/usr/bin:/bin node scripts/acp-client.mjs \
   /bin/bash /absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh  # Zed-like spawn
 ```
