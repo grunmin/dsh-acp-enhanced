@@ -13,6 +13,7 @@ controls. This project is a drop-in replacement that surfaces what the Web GUI h
 | Surface | ACP mechanism | What you see in Zed |
 |---|---|---|
 | **Block-level streaming** | `agent_message_chunk` per committed text block (`block-end`), grouped by `messageId` per model step | Text appears while the agent works; cancelled/retried blocks never leak torn output |
+| **Reasoning streaming** | reasoning blocks (`blockType: 'reasoning'`) commit the same way, sent as `agent_thought_chunk` | the model's thinking scrolls live in Zed's thinking area |
 | **Token & context telemetry** | standard `usage_update` (`used` = context pressure, `size` = model context window) | Context meter in the agent status bar |
 | **Cache hit rate / TPS / input-output-reasoning tokens / tool timing / turn count** | `usage_update._meta` + `tool_call` / `tool_call_update` `_meta` | Raw numbers every step (the `_meta` extension field carries the full breakdown) |
 | **Tool-call visibility** | `tool_call` carries `rawInput` (parsed arguments) and `kind` (read/edit/execute/…); `tool_call_update` carries `rawOutput` (result preview, capped at 12k chars) | Tool cards expand to show the **exact arguments** (e.g. the bash command) and the **result**, with kind-based icons |
@@ -26,6 +27,7 @@ controls. This project is a drop-in replacement that surfaces what the Web GUI h
 | **Session resume** | `loadSession` capability + `session/load` resumes the persisted agent via `agents.resume` and replays history as `user_message_chunk` / `agent_message_chunk` / `tool_call` | **Continue a previous thread** in Zed (long investigations keep their context) |
 | **Session archive list** | `sessionCapabilities.list/delete`; `session/list` enumerates persisted sessions via `ctx.sessionPersistence.list()` (titles read from `session/title` events in the stored log), `session/delete` disposes the live agent and removes its persisted directory; `session/title` / `turn/end` push live `session_info_update`s | The **thread archive** shows all sessions (titled, sorted by last activity) — click to resume, delete to remove |
 | **Empty-option suppression** | no `reasoning_effort` option is advertised when the routed model exposes no efforts | No empty, unclickable "Reasoning effort" chip |
+| **MCP servers** | `session/new` / `session/load` `mcpServers` mount `@deepseek-ai/dsh-mcp-client` per entry (stdio + streamable HTTP, resolved from the host dsh install for a single module instance); tools join as `mcp__<serverName>__<tool>`; a failing server never takes the session down | tools from any MCP server (database, browser, filesystem, …) land directly in the model's tool list |
 
 ## Preview
 
@@ -206,6 +208,8 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/p
 ```sh
 node scripts/acp-client.mjs           # end-to-end smoke test (needs a routable provider)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
+node scripts/acp-mcp-test.mjs         # MCP mount test (mounts a minimal stdio MCP server, no model calls)
+node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI: auto-creates a profile → initialize → session/new)
 node scripts/acp-resume-test.mjs      # resume tests (two processes: create+persist → load+replay → continue)
 ACP_DEBUG=1 dsh --profile acp-enhanced   # lifecycle trace on stderr
 ```
@@ -218,8 +222,11 @@ switching, and `session/cancel`. `acp-client-tools.mjs` uses the SDK's
 `zed_*` tool calls arrive as `fs/write_text_file`, `fs/read_text_file`,
 `terminal/create` requests, that `ask_user_question` arrives as an `elicitation/create`
 form (with enum options), that the `plan_mode` boolean toggle emits ACP `plan` updates
-(on → entry, off → cleared), and that routes without reasoning efforts no longer
-advertise an empty `reasoning_effort`.
+(on → entry, off → cleared), and that the `reasoning_effort` option is route-conditional
+(present with non-empty options on routes with efforts, suppressed on routes without).
+`acp-mcp-test.mjs` uses `scripts/fixtures/mcp-echo-server.mjs` to verify that
+`session/new` `mcpServers` are really mounted (the server receives initialize and
+tools/list) and that an identical list is reused, not re-mounted.
 
 ## Design notes
 
@@ -327,8 +334,9 @@ advertise an empty `reasoning_effort`.
 - **Modes**: permission presets are presented as ACP session modes, so Zed's mode
   switcher drives the sandbox/approval presets.
 - **Known limitations** (inherited from the official bridge): baseline prompts only
-  (no image/audio/MCP attachments), no `additionalDirectories`/MCP server attachment,
-  committed text streams at block granularity, and one in-flight prompt per session.
+  (no image/audio attachments), no `additionalDirectories`, committed text streams at
+  block granularity, and one in-flight prompt per session. MCP servers (stdio +
+  streamable HTTP) are supported; legacy SSE and `acp` transports are not advertised.
   Session resume and the archive list are supported (see above), but
   `session/close` / `session/fork` / `session/resume` are not implemented (the
   capabilities are not declared, so conforming clients do not call them);

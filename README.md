@@ -13,6 +13,7 @@
 | 能力 | ACP 机制 | 你在 Zed 中看到的 |
 |---|---|---|
 | **块级流式输出** | 每个已提交文本块（`block-end`）发送一条 `agent_message_chunk`，按每个模型 step 的 `messageId` 分组 | agent 工作时文本实时出现；被取消/重试的块不会残留撕裂的半截输出 |
+| **推理流式** | reasoning 块（`blockType: 'reasoning'`）同样按块提交，发送 `agent_thought_chunk` | 模型的思考过程实时滚动（Zed 的 thinking 区域） |
 | **Token 与上下文遥测** | 标准 `usage_update`（`used` = 上下文压力，`size` = 模型上下文窗口） | agent 状态栏中的上下文仪表 |
 | **缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 / 轮次计数** | `usage_update._meta` + `tool_call` / `tool_call_update` 的 `_meta` | 每一步都有原始数字（`_meta` 扩展字段携带完整明细） |
 | **工具调用可见性** | `tool_call` 携带 `rawInput`（解析后的参数对象）与 `kind`（read/edit/execute/…）；`tool_call_update` 携带 `rawOutput`（结果预览，最多 12k 字符） | 工具卡片能展开看到**具体参数**（如 bash 执行的命令）与**执行结果**，并按工具类型渲染图标 |
@@ -26,6 +27,7 @@
 | **会话恢复（resume）** | 声明 `loadSession` 能力 + `session/load` 走 `agents.resume` 加载持久化会话，并把历史回放为 `user_message_chunk` / `agent_message_chunk` / `tool_call` | 在 Zed 里可以**继续之前的对话线程**（长排查不丢上下文） |
 | **会话归档列表** | 声明 `sessionCapabilities.list/delete`；`session/list` 从持久化存储（`ctx.sessionPersistence.list()`）枚举会话（标题从存储日志的 `session/title` 事件读取），`session/delete` 释放在线 agent 并删除其持久化目录；`session/title` / `turn/end` 实时推送 `session_info_update` | Zed 的**历史线程归档**能看到本项目的全部会话（带标题、按更新时间排序），可点击恢复，也可删除 |
 | **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
+| **MCP servers** | `session/new` / `session/load` 的 `mcpServers` 逐项挂载 `@deepseek-ai/dsh-mcp-client`（stdio + streamable HTTP，从宿主 dsh 安装解析、保证单实例）；工具注册为 `mcp__<serverName>__<tool>`；失败的 server 不会拖垮会话 | 任意 MCP server 的工具（数据库、浏览器、文件系统…）直接进入模型工具列表 |
 
 ## 效果预览
 
@@ -191,6 +193,8 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/p
 node scripts/acp-client.mjs           # 端到端冒烟测试（需要 DEEPSEEK_API_KEY）
 DEEPSEEK_API_KEY=... node scripts/acp-client.mjs
 node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan 能力）
+node scripts/acp-mcp-test.mjs         # MCP 挂载测试（挂载一个最小 stdio MCP server，无模型调用）
+node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI：自动建 profile → initialize → session/new）
 node scripts/acp-resume-test.mjs      # 会话恢复测试（两个进程：创建持久化 → 加载回放 → 续聊）
 ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
 ```
@@ -201,7 +205,10 @@ ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
 `fs.readTextFile/writeTextFile/terminal/elicitation` 能力，验证模型调用 `zed_*` 工具时请求以
 `fs/write_text_file`、`fs/read_text_file`、`terminal/create` 正确到达客户端，`ask_user_question`
 以 `elicitation/create` 表单（含 enum 选项）到达客户端，`plan_mode` 布尔开关触发 ACP `plan`
-update（开→条目、关→清空），并验证无 reasoning efforts 的路由不再广播空 `reasoning_effort`。
+update（开→条目、关→清空），并验证 `reasoning_effort` 选项按路由条件出现（有 efforts 的路由
+出现、无 efforts 的路由抑制）。`acp-mcp-test.mjs` 用 `scripts/fixtures/mcp-echo-server.mjs`
+验证 `session/new` 的 `mcpServers` 被真实挂载（server 收到 initialize 与 tools/list）且相同
+列表不重复挂载。
 
 ## 设计说明
 
@@ -283,8 +290,9 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   配置项——Zed 就不会渲染一个空的、无法操作的"Reasoning effort"chip。切到带 efforts 的
   模型后该选项自动重新出现（每次切换都会重播 `config_option_update`）。
 - **模式**：权限预设被呈现为 ACP 会话模式，因此 Zed 的模式切换器驱动 sandbox/approval 预设。
-- **已知限制**（继承自官方桥接器）：仅 baseline prompt（无图片/音频/MCP 附件）、不支持
-  `additionalDirectories`/MCP server 附加、已确认文本按块粒度流式，且每个会话同时只能有一个
-  in-flight prompt。会话恢复与归档列表已支持（见上），但 `session/close` / `session/fork` /
-  `session/resume` 未实现（不声明能力，合规客户端不会调用）；`session/delete` 因 dsh 持久化
-  面没有官方删除 API，采用直接删除后端目录的方式。
+- **已知限制**（继承自官方桥接器）：仅 baseline prompt（无图片/音频附件）、不支持
+  `additionalDirectories`、已确认文本按块粒度流式，且每个会话同时只能有一个
+  in-flight prompt。MCP servers（stdio + streamable HTTP）已支持，但 legacy SSE
+  传输与 `acp` 传输不声明。`session/close` / `session/fork` / `session/resume` 未实现
+  （不声明能力，合规客户端不会调用）；`session/delete` 因 dsh 持久化面没有官方删除
+  API，采用直接删除后端目录的方式。

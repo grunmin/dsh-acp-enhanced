@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Syntax check
+        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+      - name: Package integrity (tarball contents)
+        run: npm pack --dry-run
+      - name: Install dsh CLI
+        run: npm install -g @deepseek-ai/dsh@0.1.0-rc.6
+      - name: Keyless boot smoke (initialize + session/new)
+        run: node scripts/acp-smoke-keyless.mjs
+      - name: MCP mount smoke (no model calls)
+        run: node scripts/acp-mcp-test.mjs
+      - name: Full e2e (requires DEEPSEEK_API_KEY)
+        if: ${{ secrets.DEEPSEEK_API_KEY != '' }}
+        run: node scripts/acp-client.mjs
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}

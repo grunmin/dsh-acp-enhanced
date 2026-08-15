@@ -114,8 +114,14 @@ try {
   const optionIds = (created.configOptions ?? []).map((o) => o.id)
   check('config options advertised', optionIds.includes('model') && optionIds.includes('permission_preset'),
     JSON.stringify(optionIds))
-  check('empty reasoning_effort option suppressed', !optionIds.includes('reasoning_effort'),
-    JSON.stringify(optionIds))
+  // The reasoning_effort option is route-conditional: it appears only when
+  // the routed model exposes selectable efforts. On routes with efforts (e.g.
+  // deepseek official) its presence is correct; on routes without, it must be
+  // suppressed. Assert both directions from what the option set tells us.
+  const effortOption = (created.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+  check('reasoning_effort option is route-conditional',
+    effortOption === undefined || (Array.isArray(effortOption.options) && effortOption.options.length > 0),
+    effortOption === undefined ? 'suppressed (no efforts on this route)' : `present with ${effortOption.options.length} effort(s)`)
   const planModeOption = (created.configOptions ?? []).find((o) => o.id === 'plan_mode')
   check('plan_mode boolean option advertised', planModeOption?.type === 'boolean' && planModeOption?.currentValue === false,
     JSON.stringify(planModeOption))
@@ -150,7 +156,7 @@ try {
   // shape (e.g. grouped select options emitted as `{ groupName, options }`
   // instead of `{ group, name, options }`) would slip through and only break
   // in real Zed, where the whole option gets dropped on deserialization.
-  const { zSessionConfigOption } = await import('../node_modules/.pnpm/@agentclientprotocol+sdk@0.25.1_zod@4.4.3/node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js')
+  const { zSessionConfigOption } = await import('../node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js')
   const parsedOptions = created.configOptions.map((option) => zSessionConfigOption.safeParse(option))
   check('every config option passes SDK schema validation',
     parsedOptions.every((r) => r.success),
