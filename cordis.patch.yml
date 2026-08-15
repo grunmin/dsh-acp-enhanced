@@ -3,10 +3,26 @@
 # sandboxed bash/fs, approval, and optionally permission presets (for the
 # session/mode and permission_preset config surfaces).
 #
-# Install with:  dsh plugin --profile <name> add dsh-acp-enhanced
+# Official install (auto-initializes the profile, auto-appends this package to
+# the profile's bundle layers — no manual patch writing):
+#   dsh plugin --profile <name> add "link:/absolute/path/to/dsh-acp-enhanced"
+#
+# The model route is driven by environment variables (set them in Zed's
+# agent_servers env, or export before `dsh --profile <name>`):
+#   DSH_ACP_PROVIDER  provider id, e.g. deepseek-official or your gateway id
+#   DSH_ACP_MODEL     model id, e.g. deepseek-v4-flash
+# Both default to the DeepSeek official route. Overriding `agent-default-model`
+# keeps the bridge's per-session selection fallback on the same route (before
+# any request header exists), so the first prompt never falls back to a
+# non-routable default.
+- id: agent-default-model
+  config:
+    provider: !!js "process.env.DSH_ACP_PROVIDER ?? 'deepseek-official'"
+    model: !!js "process.env.DSH_ACP_MODEL ?? 'deepseek-v4-flash'"
+
 - insert:
     - id: acp-enhanced
       name: 'dsh-acp-enhanced'
       config:
-        provider: deepseek-official
-        model: deepseek-v4-flash
+        provider: !!js "process.env.DSH_ACP_PROVIDER ?? 'deepseek-official'"
+        model: !!js "process.env.DSH_ACP_MODEL ?? 'deepseek-v4-flash'"
