@@ -7,6 +7,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # secrets is not available inside `if` conditions; route it through a
+      # job-level env var instead so the full e2e step can gate on presence.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     strategy:
       matrix:
         node-version: [22, 24]
@@ -31,7 +35,5 @@ jobs:
       - name: MCP mount smoke (no model calls)
         run: node scripts/acp-mcp-test.mjs
       - name: Full e2e (requires DEEPSEEK_API_KEY)
-        if: ${{ secrets.DEEPSEEK_API_KEY != '' }}
+        if: ${{ env.DEEPSEEK_API_KEY != '' }}
         run: node scripts/acp-client.mjs
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
