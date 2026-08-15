@@ -34,6 +34,18 @@ rl.on('line', (line) => {
     return
   }
   if (msg.id !== undefined) {
+    // A request FROM the agent to this mock client (the agent's outbound
+    // request-permission calls arrive here with an id). Respond as a real
+    // editor would: allow the operation once.
+    if (msg.method === 'session/request_permission') {
+      console.log('NOTIFY: session/request_permission ->', JSON.stringify(msg.params).slice(0, 200))
+      child.stdin.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        result: { outcome: { outcome: 'selected', optionId: 'allow-once' } },
+      }) + '\n')
+      return
+    }
     const resolve = pending.get(msg.id)
     if (resolve) {
       pending.delete(msg.id)

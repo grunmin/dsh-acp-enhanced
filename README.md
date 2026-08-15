@@ -16,8 +16,8 @@
 | **Token 与上下文遥测** | 标准 `usage_update`（`used` = 上下文压力，`size` = 模型上下文窗口） | agent 状态栏中的上下文仪表 |
 | **缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 / 轮次计数** | `usage_update._meta` + `tool_call` / `tool_call_update` 的 `_meta` | 每一步都有原始数字（`_meta` 扩展字段携带完整明细） |
 | **工具调用可见性** | `tool_call` 携带 `rawInput`（解析后的参数对象）与 `kind`（read/edit/execute/…）；`tool_call_update` 携带 `rawOutput`（结果预览，最多 12k 字符） | 工具卡片能展开看到**具体参数**（如 bash 执行的命令）与**执行结果**，并按工具类型渲染图标 |
-| **模型切换** | `session/set_config_option`，`model` 下拉框（取值来自实时的 `provider/model` 模型目录） | 配置项 UI |
-| **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（当前模型路由可用的强度） | 配置项 UI |
+| **模型切换** | `session/set_config_option`，`model` 下拉框（取值来自实时的 `provider/model` 模型目录；分组线格式为 ACP 规范的 `{ group, name, options }`） | 配置项 UI——可切换路由内任意模型 |
+| **推理强度** | `session/set_config_option`，`reasoning_effort` 下拉框（仅当当前模型路由**暴露**可选的 reasoning efforts 时） | 配置项 UI（当前 网关路由的所有模型都不暴露 efforts——见"设计说明"，这是路由/适配器限制而非桥接器 bug） |
 | **权限预设** | `session/set_config_option`（`permission_preset`）**以及**通过 `session/set_mode` 的 ACP 会话模式 | 模式切换器 / 配置项 UI |
 | **审批** | `session/request_permission`（每个工具调用 allow-once / reject-once） | 原生审批弹窗 |
 | **Zed 客户端文件工具** | agent 侧注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`，转发为 `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | 文件编辑出现在 agent 面板的 **"编辑文件"区（带 diff + 接受/拒绝）**；命令跑在 **Zed 真实终端** 里 |
@@ -252,6 +252,17 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   `resolveModelInfo`），`reasoning_effort` 下拉框枚举当前路由的可用强度，`permission_preset`
   枚举已挂载的预设。修改走 `llm.resolveCallConfig` 与 `installModelSelection`（与 Web
   api-proxy 使用的同一机制）或 `permissionPresets.apply` 写路径。
+- **模型分组线格式**：`model` 选项的分组必须是 ACP 规范的
+  `{ group: <id>, name: <label>, options: [...] }`。早期版本发成了 `{ groupName, options }`，
+  Zed（`agent-client-protocol-schema` 1.4.0）反序列化时把整个组跳过（`DefaultOnError` +
+  `VecSkipError`），于是 `model` 下拉框变空、模型无法选择——而 SDK 的 mock 客户端不校验
+  响应所以测试没拦住；现在 `acp-client-tools.mjs` 会对每个 config option 跑
+  `zSessionConfigOption.safeParse`，这类线格式错误不会再漏网。
+- **推理强度的路由限制**：`reasoning_effort` 选项只在模型路由**暴露** efforts 时广播
+  （`resolveModelInfo().reasoning.efforts` 非空）。当前 网关路由的 9 个模型都不
+  暴露 efforts（逐个探测确认），且显式设置会被适配器拒绝（`does not support reasoning
+  effort "high"`）——所以该路由下 Zed 里没有推理强度下拉是**正确行为**，不是桥接器 bug；
+  换到暴露 efforts 的路由（如其他环境 上的官方 deepseek 模型）后下拉框会自动出现。
 - **模型目录过滤（`includeAllProviders`，默认关）**：默认只广播 `config.provider` 的模型，
   避免把"幽灵 provider"（已挂载但不可路由的适配器，例如聊天走网关时仍挂着的官方
   `deepseek-official`）列进下拉框。这些模型在列表里看起来可切换，但一旦选中，后续每次
