@@ -22,6 +22,7 @@
 | **Zed 客户端文件工具** | agent 侧注册 `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`，转发为 `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | 文件编辑出现在 agent 面板的 **"编辑文件"区（带 diff + 接受/拒绝）**；命令跑在 **Zed 真实终端** 里 |
 | **Zed 表单提问** | 注册 `ask_user_question` 工具 + `userQuestions` provider，转发为 `elicitation/create`（form 模式） | DSH 需要用户确认/选择时，问题以 **Zed 原生表单** 弹出，选项即点即答 |
 | **Plan 面板** | `plan_mode` 布尔配置项（Zed 侧开关）+ `plan/mode` 事件映射为 ACP `plan` update | Zed 底部出现 **Plan 状态条**：plan mode 开时显示"规划中"，关时清空 |
+| **会话恢复（resume）** | 声明 `loadSession` 能力 + `session/load` 走 `agents.resume` 加载持久化会话，并把历史回放为 `user_message_chunk` / `agent_message_chunk` / `tool_call` | 在 Zed 里可以**继续之前的对话线程**（长排查不丢上下文） |
 | **空选项抑制** | 当前模型路由无 reasoning efforts 时不广播 `reasoning_effort` 配置项 | 不再出现一个空的、点不动的"Reasoning effort"chip |
 
 > **仓库结构** —— 本仓库包含两个相互独立的包：
@@ -216,7 +217,8 @@ Zed 会热重载设置。然后在 Zed 界面中：
 ```sh
 node scripts/acp-client.mjs           # 端到端冒烟测试（需要 DEEPSEEK_API_KEY）
 DEEPSEEK_API_KEY=... node scripts/acp-client.mjs
-node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal 能力）
+node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan 能力）
+node scripts/acp-resume-test.mjs      # 会话恢复测试（两个进程：创建持久化 → 加载回放 → 续聊）
 ACP_DEBUG=1 dsh --profile acp-enhanced   # stderr 上的详细生命周期 trace
 ```
 
@@ -269,9 +271,18 @@ update（开→条目、关→清空），并验证无 reasoning efforts 的路�
   update——开时一条"规划中"条目，关时清空。DSH 的 plan mode 没有结构化任务列表，所以这是
   状态指示而非任务清单。注意 ACP 的 `plan` update 是**扁平**形状
   （`{ sessionUpdate: 'plan', entries: [...] }`），不是 `{ plan: {...} }`。
+- **会话恢复（session/load）**：`initialize` 声明 `loadSession: true`；`session/load` 通过
+  `ctx.agents.resume({ resumeSessionId })` 从持久化存储（`dsh-session-persistence-jsonl`，
+  dsh-base 已挂载）恢复 agent，然后按事件日志回放历史：`user/message`（仅
+  `source.kind === 'user'` 的真实人类消息，过滤 system-reminder 等合成注入）→
+  `user_message_chunk`，`assistant/message` 的文本 → `agent_message_chunk`，
+  `tool/call`/`tool/result` → `tool_call`/`tool_call_update`。Zed 在线程插入后才完成 load
+  RPC，所以回放通知能被线程接收。回放完成后该会话与新建会话一样支持继续 prompt。
 - **空 effort 抑制**：当前路由模型不暴露 reasoning efforts 时，不广播 `reasoning_effort`
   配置项——Zed 就不会渲染一个空的、无法操作的"Reasoning effort"chip。切到带 efforts 的
   模型后该选项自动重新出现（每次切换都会重播 `config_option_update`）。
 - **模式**：权限预设被呈现为 ACP 会话模式，因此 Zed 的模式切换器驱动 sandbox/approval 预设。
-- **已知限制**（继承自官方桥接器）：仅全新会话（无 load/resume）、仅 baseline prompt（无
-  图片/音频/MCP）、已确认文本按块粒度流式，且每个会话同时只能有一个 in-flight prompt。
+- **已知限制**（继承自官方桥接器）：仅 baseline prompt（无图片/音频/MCP 附件）、不支持
+  `additionalDirectories`/MCP server 附加、已确认文本按块粒度流式，且每个会话同时只能有一个
+  in-flight prompt。会话恢复已支持（见上），但"恢复后同一连接内不能有两个同名会话记录"等
+  边界由 `session/load` 的 live-session 短路处理。
