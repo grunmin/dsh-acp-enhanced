@@ -3,65 +3,74 @@
 # dsh-acp-enhanced
 
 An enhanced [Agent Client Protocol](https://agentclientprotocol.com) (ACP) server for
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh), built for
-editors like **Zed** that speak ACP over JSON-RPC stdio.
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh), built for ACP
+editors like **Zed**. It is a drop-in replacement for the official `@deepseek-ai/dsh-acp`
+bridge: the official bridge only streams plain text, this one exposes the Web GUI's
+capabilities — streaming, telemetry, model/permission control, session management, MCP —
+over the ACP wire.
 
-The official `@deepseek-ai/dsh-acp` bridge is deliberately automation-only: it commits
-text only after a whole message, carries no telemetry, and exposes no model/permission
-controls. This project is a drop-in replacement that surfaces what the Web GUI has:
+## Features
 
-| Surface | ACP mechanism | What you see in Zed |
-|---|---|---|
-| **Block-level streaming** | `agent_message_chunk` per committed text block (`block-end`), grouped by `messageId` per model step | Text appears while the agent works; cancelled/retried blocks never leak torn output |
-| **Reasoning streaming** | reasoning blocks (`blockType: 'reasoning'`) commit the same way, sent as `agent_thought_chunk` | the model's thinking scrolls live in Zed's thinking area |
-| **Token & context telemetry** | standard `usage_update` (`used` = context pressure, `size` = model context window) | Context meter in the agent status bar |
-| **Cache hit rate / TPS / input-output-reasoning tokens / tool timing / turn count** | `usage_update._meta` + `tool_call` / `tool_call_update` `_meta` | Raw numbers every step (the `_meta` extension field carries the full breakdown) |
-| **Tool-call visibility** | `tool_call` carries `rawInput` (parsed arguments) and `kind` (read/edit/execute/…); `tool_call_update` carries `rawOutput` (result preview, capped at 12k chars) | Tool cards expand to show the **exact arguments** (e.g. the bash command) and the **result**, with kind-based icons |
-| **Model switching** | `session/set_config_option` with the `model` select (`provider/model` values from the live catalog; ACP grouped-select wire shape `{ group, name, options }`) | Config-option UI — switch to any model on the route |
-| **Reasoning effort** | `session/set_config_option` with the `reasoning_effort` select (only when the routed model **exposes** selectable efforts) | Config-option UI (appears only when the route exposes efforts; see Design notes) |
-| **Permission presets** | `session/set_config_option` (`permission_preset`) **and** ACP session modes via `session/set_mode` | Mode switcher / config-option UI |
-| **Approval** | `session/request_permission` (allow-once / reject-once per tool call) | Native permission prompt |
-| **Zed client file tools** | agent-side `zed_read_text_file` / `zed_write_text_file` / `zed_terminal` forwarded as `fs/read_text_file` / `fs/write_text_file` / `terminal/create` | Edits land in the agent panel's **"Edited files" section (diff + accept/reject)**; commands run in a **real Zed terminal** |
-| **Zed form elicitation** | `ask_user_question` tool + `userQuestions` provider forwarded as `elicitation/create` (form mode) | Questions pop up as **native Zed forms**; options answerable in one click |
-| **Plan panel** | `plan_mode` boolean config option + `plan/mode` events mapped to ACP `plan` updates | A **Plan status bar** at the bottom of the panel while plan mode is on; cleared when it leaves |
-| **Session resume** | `loadSession` capability + `session/load` resumes the persisted agent via `agents.resume` and replays history as `user_message_chunk` / `agent_message_chunk` / `tool_call` | **Continue a previous thread** in Zed (long investigations keep their context) |
-| **Session archive list** | `sessionCapabilities.list/delete`; `session/list` enumerates persisted sessions via `ctx.sessionPersistence.list()` (titles read from `session/title` events in the stored log), `session/delete` disposes the live agent and removes its persisted directory; `session/title` / `turn/end` push live `session_info_update`s | The **thread archive** shows all sessions (titled, sorted by last activity) — click to resume, delete to remove |
-| **Empty-option suppression** | no `reasoning_effort` option is advertised when the routed model exposes no efforts | No empty, unclickable "Reasoning effort" chip |
-| **MCP servers** | `session/new` / `session/load` `mcpServers` mount `@deepseek-ai/dsh-mcp-client` per entry (stdio + streamable HTTP, resolved from the host dsh install for a single module instance); tools join as `mcp__<serverName>__<tool>`; a failing server never takes the session down | tools from any MCP server (database, browser, filesystem, …) land directly in the model's tool list |
+### Output & telemetry
+
+- **Block + reasoning streaming**: text blocks and the model's thinking arrive live
+  (`agent_message_chunk` / `agent_thought_chunk`); cancelled/retried attempts never leak
+  torn output
+- **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
+  tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown)
+
+### Model & permissions
+
+- **Model switching**: live `provider/model` catalog dropdown (ACP grouped-select wire shape)
+- **Reasoning effort**: `reasoning_effort` dropdown — only when the routed model exposes
+  selectable efforts
+- **Permission presets**: read-only / workspace-write / full-access session modes
+- **Approval**: native allow-once / reject-once prompts per tool call
+
+### Zed deep integration
+
+- **Tool cards**: expand to see each call's full arguments and result preview
+  (`rawInput` / `rawOutput`), with per-kind icons
+- **Zed files & terminal**: `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
+  put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
+  real Zed terminal
+- **Native form questions**: `ask_user_question` → `elicitation/create` form, click an
+  option, no typing
+- **Plan panel**: plan mode toggle → "planning" status bar in Zed
+
+### Sessions
+
+- **Resume & archive**: `session/load` restores past threads (full replay);
+  `session/list` / `session/delete` manage the thread archive (titled, sorted by last
+  activity); live title updates
+
+### MCP
+
+- **MCP servers**: `session/new` `mcpServers` mount any MCP server (stdio + streamable
+  HTTP); tools join as `mcp__<server>__<tool>`; a failing server never takes the session
+  down
 
 ## Preview
 
-After picking **dsh-acp-enhanced** in Zed's AI Agent panel, you get:
+After picking **dsh-acp-enhanced** in Zed's AI Agent panel:
 
 <img src="assets/screenshots/approval-config-context.png" alt="Approval popup, model/reasoning-effort switches, context ring" width="560">
 
-- Tool calls that need permission pop a **native approval prompt** (allow-once /
-  reject-once); below the input box sit the **model**, **reasoning effort**,
-  **permission preset**, and **plan mode** config options plus the **context usage
-  ring** (`usage_update` telemetry with cache hit rate, TPS, and more).
+- Tool calls that need permission pop a **native approval prompt**; below the input box sit
+  the model, reasoning effort, permission preset, plan mode options and the context usage
+  ring.
 
 <img src="assets/screenshots/tool-cards-elicitation.png" alt="Tool call inputs and outputs, native Zed question form" width="320">
 
-- **Tool cards** expand to show each call's full arguments (e.g. the exact bash
-  command) and the result preview (`rawInput` / `rawOutput`); when dsh needs your
-  confirmation or a choice, the question arrives as a **native Zed form**
-  (`ask_user_question` → `elicitation/create`) — click an option, no typing.
-
-> **Repository layout** — this repo contains two independent packages:
-> - `dsh-acp-enhanced` (repo root): the enhanced ACP bridge (`lib/index.js`).
-> - `packages/dsh-web-search-openrouter/`: a standalone `ctx.web` search provider that
->   routes `web_search` through any OpenAI-Responses gateway instead of DeepSeek's
->   Anthropic `/messages` endpoint. It deliberately does **not** couple to the ACP
->   bridge, so any profile (the Web GUI included) can mount it.
+- **Tool cards** expand to show full arguments and result previews; when dsh needs your
+  confirmation or a choice, the question arrives as a **native Zed form** — click an
+  option, no typing.
 
 ## Quick start
 
-This package follows the official dsh plugin conventions (it declares `dsh.bundle`),
-so installation is identical to any official bundle: **one command** —
-`dsh plugin --profile <name> add <pkg>` auto-initializes the profile (the first layer
-`dsh-base` already carries the whole agent stack), installs the package, and
-**auto-appends it to the profile's bundle layers**. The shipped patch inserts the
-`acp-enhanced` row and overrides the default model route — **no profile YAML to write**.
+This package follows the official dsh plugin conventions (it declares `dsh.bundle`), so
+installation matches any official bundle: **one command** — auto-initializes the profile,
+installs the package, appends the bundle layer; no profile YAML to write.
 
 ### Install (2 steps)
 
@@ -71,16 +80,12 @@ so installation is identical to any official bundle: **one command** —
 dsh plugin --profile acp-enhanced add dsh-acp-enhanced
 ```
 
-> When hacking on the code itself, use `link:` to a local checkout instead (live
-> edits, no registry round-trip):
+> When hacking on the code, use `link:` to a local checkout instead (live edits):
 > `dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced"`
 
-**Step 2 — register in Zed** (the model route and credentials all come from `env`; no
-patch to write)
-
-Register the agent under `agent_servers` in `~/.config/zed/settings.json`. Zed (a GUI
-app) spawns agent processes with a minimal PATH, so use the shipped launcher
-`scripts/dsh-acp-zed.sh` (it locates `node`/`dsh` itself).
+**Step 2 — register in Zed** (under `agent_servers` in `~/.config/zed/settings.json`;
+Zed spawns agents with a minimal PATH, so use the shipped launcher
+`scripts/dsh-acp-zed.sh`, which locates `node`/`dsh` itself)
 
 #### Most common: DeepSeek official API (the default route)
 
@@ -101,16 +106,12 @@ app) spawns agent processes with a minimal PATH, so use the shipped launcher
 }
 ```
 
-> This is the setup the author uses daily (macOS). `DSH_ACP_PROVIDER` / `DSH_ACP_MODEL`
-> match the shipped patch's defaults (`deepseek-official` / `deepseek-v4-flash`), so
-> **both can be omitted entirely** — writing them out just makes the route explicit in
-> your Zed config. The API key does not have to live in Zed: store it in
-> `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`, mode 600) and the dsh credentials
-> service resolves it; the launcher additionally falls back to inheriting the key from
-> a running `dsh web` process.
+> Both env vars match the shipped patch's defaults, so **they can be omitted entirely** —
+> writing them out just makes the route explicit. The API key does not have to live in Zed:
+> store it in `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`) and the dsh credentials
+> service resolves it; the launcher also falls back to a running `dsh web` process's key.
 
-Optional: pin the panel's default config options (model / plan mode / reasoning
-effort; all still changeable in the panel at any time):
+Optional: pin the panel's default config options (all still changeable in the panel):
 
 ```jsonc
 "dsh-acp-enhanced": {
@@ -128,8 +129,8 @@ effort; all still changeable in the panel at any time):
 
 #### Extended: route through an OpenAI-Responses gateway (e.g. a company model gateway)
 
-Same install path; only the env values change to the provider/model the gateway
-exposes plus the key env var it requires:
+Same install path; only the env values change to the provider/model the gateway exposes
+plus the key env var it requires:
 
 ```jsonc
 "dsh-acp-enhanced": {
@@ -144,38 +145,31 @@ exposes plus the key env var it requires:
 }
 ```
 
-> `<KEY_ENV_NAME>` is the env var the provider reads for its key (gateway adapters
-> usually declare their own `apiKeyEnv`) — alternatively store it in
-> `~/.dsh/.credentials.yaml` and let the dsh credentials service manage it. Every
-> route uses the same install path; only the env values differ.
+> `<KEY_ENV_NAME>` can also be omitted and the key stored in
+> `~/.dsh/.credentials.yaml` instead.
 
 Zed hot-reloads settings. Open the **AI Agent panel** (`Cmd+Shift+A`) → pick
-**dsh-acp-enhanced** in the top **agent selector** → send your first message. Replies
-stream in real time, the status bar shows context usage, and the panel exposes Model /
-Permission preset / Plan mode config options plus read-only / workspace-write /
-full-access modes; the thread archive lists and resumes past sessions.
+**dsh-acp-enhanced** in the agent selector → send your first message: replies stream in
+real time, the status bar shows context usage, the panel exposes Model / Permission preset
+/ Plan mode options plus three modes, and the thread archive lists and resumes past
+sessions.
 
 Verify locally (no Zed needed):
 
 ```sh
 node scripts/acp-client.mjs                    # official default route, no env; expect ALL CHECKS PASSED
 DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # only for a custom route
-env -i HOME=$HOME PATH=/usr/bin:/bin node scripts/acp-client.mjs \
-  /bin/bash /absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh  # Zed-like spawn
 ```
 
 ### Optional: route web_search through the same gateway
 
-The bridge does not depend on it. If the gateway implements the OpenAI Responses
-`web_search` server tool, you can route search through it too (reusing the same
-credential). Install it as a plain dependency and append two blocks to the profile's
-`cordis.patch.yml`:
+If the gateway implements the OpenAI Responses `web_search` server tool, you can route
+search through it too (reusing the same credential). Install the sub-package and append
+two blocks to the profile's `cordis.patch.yml`:
 
 ```sh
-dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/packages/dsh-web-search-openrouter"
+dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 ```
-
-`~/.dsh/profiles/acp-enhanced/cordis.patch.yml` (`<provider>` is your gateway provider id):
 
 ```yaml
 - id: web
@@ -192,153 +186,30 @@ dsh plugin --profile acp-enhanced add "link:/absolute/path/to/dsh-acp-enhanced/p
         apiKeyEnv: <KEY_ENV_NAME>
 ```
 
-### Troubleshooting
+## Troubleshooting
 
-| Symptom | Cause & fix |
+| Symptom | Fix |
 |---|---|
-| `Server exited with status 127` / `exec: dsh: not found` | Zed's PATH lacks `node`/`dsh`. Use the shipped `dsh-acp-zed.sh` launcher (it resolves both); verify with `bash scripts/dsh-acp-zed.sh` in a clean shell. |
-| `no API key for provider route "deepseek-official"` | The key cannot be resolved. Write `~/.dsh/.credentials.yaml` (see step 2), or set `env.DEEPSEEK_API_KEY` in the agent_servers entry. |
-| Agent does not appear after editing settings | Run `zed: reload settings` (command palette) or restart Zed. |
-| "Cannot switch models" or "context usage not shown" in Zed | Usually a ghost provider is selected (an adapter that is mounted but has no usable API key). The bridge filters ghost groups by default (only `config.provider` models are advertised); if it persists, check that the profile's `config.provider` points at a real routable route and reset the polluted `agent-default-model` default to it. See Design notes. |
-| `session/new` reports `additionalDirectories is not supported` | The bridge only supports baseline sessions; Zed does not send extra directories by default — remove them if a custom config sends them. |
-| Need detailed diagnostics | Start with `ACP_DEBUG=1 dsh --profile acp-enhanced` (lifecycle trace on stderr). |
+| `exec: dsh: not found` (status 127) | Use the shipped `dsh-acp-zed.sh` launcher (locates node/dsh itself) |
+| `no API key for provider route "xxx"` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
+| Cannot switch models / context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
+| Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
 
 ## Development
 
 ```sh
-node scripts/acp-client.mjs           # end-to-end smoke test (needs a routable provider)
+node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
-node scripts/acp-mcp-test.mjs         # MCP mount test (mounts a minimal stdio MCP server, no model calls)
-node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI: auto-creates a profile → initialize → session/new)
-node scripts/acp-resume-test.mjs      # resume tests (two processes: create+persist → load+replay → continue)
-ACP_DEBUG=1 dsh --profile acp-enhanced   # lifecycle trace on stderr
+node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
+node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
+node scripts/acp-resume-test.mjs      # session resume test
 ```
 
-The smoke client drives initialize → session/new → prompt (verifying block streaming,
-`usage_update`, `tool_call`), config-option and mode switching, a second prompt after
-switching, and `session/cancel`. `acp-client-tools.mjs` uses the SDK's
-`ClientSideConnection` to mock Zed: it declares
-`fs.readTextFile/writeTextFile/terminal/elicitation` capabilities and verifies that
-`zed_*` tool calls arrive as `fs/write_text_file`, `fs/read_text_file`,
-`terminal/create` requests, that `ask_user_question` arrives as an `elicitation/create`
-form (with enum options), that the `plan_mode` boolean toggle emits ACP `plan` updates
-(on → entry, off → cleared), and that the `reasoning_effort` option is route-conditional
-(present with non-empty options on routes with efforts, suppressed on routes without).
-`acp-mcp-test.mjs` uses `scripts/fixtures/mcp-echo-server.mjs` to verify that
-`session/new` `mcpServers` are really mounted (the server receives initialize and
-tools/list) and that an identical list is reused, not re-mounted.
+## Known limitations
 
-## Design notes
-
-- **Block-level streaming**: text deltas accumulate per block index; a committed
-  `block-end` goes on the wire immediately. A retry restarts the same index, so the
-  torn tail of a cancelled attempt never reaches the client — ACP has no undo, and
-  this is the cleanest boundary.
-- **Telemetry**: every provider `usage` sample is broadcast as `usage_update`
-  (used = input + cache read + cache write; size = the routed model's context
-  window), with the full breakdown in `_meta`: input/output/cache/reasoning tokens,
-  `cacheHitRate`, `tps` (generated tokens / step wall-clock), step elapsed, turn
-  count, and cumulative tool-call stats.
-- **Tool-call visibility**: `tool_call` notifications carry `kind` and `rawInput`
-  (`JSON.parse` of the arguments, falling back to the raw string), so Zed's tool
-  cards expand to show the exact arguments (bash command, written file, ...);
-  `tool_call_update` carries `rawOutput` (a bounded text preview extracted from the
-  `ToolResultMessage`, truncated at 12k). **A key constraint on `kind` mapping**: Zed
-  treats `kind == 'execute'` as a terminal tool and `kind == 'edit'` as a diff tool,
-  and **hides rawInput for both**. So only `zed_terminal` (a real editor terminal)
-  maps to `execute`; bash/run_code/write tools stay `other` so rawInput renders —
-  otherwise the card shows only the tool name with no command. Also note the dsh
-  `tool/result` event carries `toolCallId` on `message.content[0].toolCallId`
-  (the `ToolResultBlock`), not on the event root — missing it makes the SDK reject
-  the whole `tool_call_update`. History replay (resume) carries the same fields.
-- **Session config**: the `model` select enumerates the live model catalog
-  (`ctx.llm.listProviders` → `listModels` → `resolveModelInfo`), `reasoning_effort`
-  enumerates the routed model's efforts, `permission_preset` enumerates the mounted
-  presets. Writes go through `llm.resolveCallConfig` + `installModelSelection` (the
-  same mechanism the Web api-proxy uses) or `permissionPresets.apply`.
-- **Model grouped-select wire shape**: the `model` option's groups must use the ACP
-  shape `{ group: <id>, name: <label>, options: [...] }`. An early version emitted
-  `{ groupName, options }`; Zed (`agent-client-protocol-schema` 1.4.0) silently
-  skipped the whole group on deserialization (`DefaultOnError` + `VecSkipError`),
-  leaving the dropdown empty — and the SDK mock client does not validate agent
-  responses, so tests missed it. Now `acp-client-tools.mjs` runs
-  `zSessionConfigOption.safeParse` on every config option, so this class of wire bug
-  cannot slip through again.
-- **Reasoning-effort route limitation**: the `reasoning_effort` option is advertised
-  only when the routed model **exposes** efforts (`resolveModelInfo().reasoning.efforts`
-  non-empty). On routes without efforts, explicitly setting one is rejected by the
-  adapter (`does not support reasoning effort "high"`) — so the absence of an effort
-  dropdown there is **correct behavior**, not a bug; switching to a route that exposes
-  efforts makes the dropdown reappear automatically.
-- **Model-catalog filtering (`includeAllProviders`, default off)**: by default only
-  `config.provider` models are advertised, keeping "ghost providers" (adapters that
-  are mounted but not routable — e.g. a `deepseek-official` with no usable API key)
-  out of the dropdown. Those models look switchable but every later prompt fails with
-  `MISSING_CREDENTIAL` (`no API key for provider route "xxx"`) — in Zed that shows up
-  as "cannot switch models, and no `usage_update` arrives because the turn failed"
-  (the Web GUI shows an unavailable banner for the current item; Zed does not, so the
-  same data looks broken there). Set `includeAllProviders: true` when multiple
-  providers are genuinely usable.
-- **Default model cannot be poisoned**: `applySelection` persists the new selection as
-  the `agent-default-model` default only when `selected.provider === config.provider`
-  (or explicit `includeAllProviders`). An accidental switch to a non-routable provider
-  therefore affects only the current session and never corrupts the default route of
-  every later session.
-- **Client-forwarding tools (Zed fs / terminal)**: on `initialize` the bridge reads
-  `clientCapabilities` and registers `zed_read_text_file` / `zed_write_text_file` /
-  `zed_terminal` (`ctx.tools.register` + `defineTool`) only when the client declares
-  the matching capabilities. Tool bodies forward to the editor via
-  `conn.readTextFile` / `conn.writeTextFile` / `conn.createTerminal`:
-  `zed_write_text_file` lands edits on Zed's own buffer (the "Edited files" section
-  with diff + accept/reject); `zed_terminal` runs the command in a real Zed terminal
-  and polls output (`terminal/output` is cumulative — take the last one), killing after
-  120s. Clients without those capabilities (e.g. pure automation) never see these tools.
-- **Zed form elicitation**: when the client declares `elicitation.form`, the bridge
-  registers the `ask_user_question` tool (mirroring `dsh-tool-ask-user`'s definition
-  through the `ctx.userQuestions` seam) plus the matching UI provider: questions map
-  to an ACP `elicitation/create` (form mode) JSON Schema (single choice → `string` +
-  `enum`, multi → `array`, none → bare `string`); the user's native-form answer maps
-  back to `AskUserQuestionAnswer` for the model. decline/cancel end the tool call with
-  an error the model can route around. Note Zed's elicitation capability is an object
-  (`form: {}`), not a boolean — check for presence, not `=== true`.
-- **Plan panel**: the `plan_mode` boolean config option toggles DSH plan mode via
-  `ctx.planMode.set(agent, active)`; `plan/mode` flips in `session/event` map to ACP
-  `plan` updates — one "planning" entry while active, cleared on exit. DSH plan mode
-  has no structured task list, so this is a state indicator, not a task list. The ACP
-  `plan` update is **flat** (`{ sessionUpdate: 'plan', entries: [...] }`), not
-  `{ plan: {...} }`.
-- **Session resume (session/load)**: `initialize` declares `loadSession: true`;
-  `session/load` resumes the persisted agent via `ctx.agents.resume({ resumeSessionId })`
-  (`dsh-session-persistence-jsonl`, mounted by dsh-base), then replays history from the
-  event log: `user/message` (only `source.kind === 'user'` — synthetic injections like
-  system reminders and skill content are filtered) → `user_message_chunk`,
-  `assistant/message` text → `agent_message_chunk`, `tool/call`/`tool/result` →
-  `tool_call`/`tool_call_update`. Zed inserts the thread before the load RPC
-  completes, so the replay notifications reach it. After replay the session behaves
-  like a fresh one for further prompts.
-- **Session archive list (session/list + session/delete)**: `initialize` declares
-  `sessionCapabilities: { list: {}, delete: {} }`; `session/list` enumerates
-  materialized sessions via `ctx.sessionPersistence.list()` (`SessionHeader`:
-  id/cwd/createdAt), titles come from live `session/title` events or are read
-  best-effort from the stored log (the last `session/title` event; oversized logs are
-  skipped), sorted by `updatedAt` descending. `session/delete` disposes the live agent
-  (`sessions.delete` + `dispose`), then removes the session's directory via
-  `persistence.locate(header)` — note dsh's persistence surface has **no official
-  delete API**, so this removes the backend directory directly. Live title/activity
-  changes are pushed as `session_info_update` notifications (`session/title` and
-  `turn/end` events).
-- **Empty-effort suppression**: when the routed model exposes no reasoning efforts,
-  the `reasoning_effort` option is not advertised — Zed renders no empty, inoperable
-  "Reasoning effort" chip. Switching to a model with efforts makes the option reappear
-  (every switch replays `config_option_update`).
-- **Modes**: permission presets are presented as ACP session modes, so Zed's mode
-  switcher drives the sandbox/approval presets.
-- **Known limitations** (inherited from the official bridge): baseline prompts only
-  (no image/audio attachments), no `additionalDirectories`, committed text streams at
-  block granularity, and one in-flight prompt per session. MCP servers (stdio +
-  streamable HTTP) are supported; legacy SSE and `acp` transports are not advertised.
-  Session resume and the archive list are supported (see above), but
-  `session/close` / `session/fork` / `session/resume` are not implemented (the
-  capabilities are not declared, so conforming clients do not call them);
-  `session/delete` removes the backend directory directly because dsh's persistence
-  surface has no official delete API.
+Baseline prompts only (no image/audio attachments), no `additionalDirectories`, text
+streams at block granularity, one in-flight prompt per session. MCP supports stdio and
+streamable HTTP (legacy SSE / `acp` transports are not advertised).
+`session/close` / `session/fork` / `session/resume` are not implemented (capabilities
+undeclared, compliant clients will not call them); `session/delete` removes the persisted
+directory directly because dsh persistence has no official delete API.
