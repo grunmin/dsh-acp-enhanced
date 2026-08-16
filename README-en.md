@@ -44,6 +44,14 @@ over the ACP wire.
   `session/list` / `session/delete` manage the thread archive (titled, sorted by last
   activity); live title updates
 
+### Commands
+
+- **Slash commands**: typing `/` reveals the command list (`available_commands_update`):
+  `/status` shows the route and telemetry, `/model` lists or switches the model, everything
+  else (`/compact` `/goal` `/permission` `/plan`…) runs straight through the harness
+  command registry — all executed **without a model turn**; unresolved slashes fall
+  through to the model (the `/skill-name` skill gesture)
+
 ### MCP
 
 - **MCP servers**: `session/new` `mcpServers` mount any MCP server (stdio + streamable

@@ -38,6 +38,13 @@ ACP 线上。
 - **恢复与归档**：`session/load` 恢复历史线程（完整回放）；`session/list` /
   `session/delete` 管理线程归档（带标题、按更新时间排序）；标题实时推送
 
+### 命令
+
+- **Slash 命令**：输入 `/` 即可见命令列表（`available_commands_update`）：`/status`
+  查看路由与遥测、`/model` 列出或切换模型，其余（`/compact` `/goal` `/permission`
+  `/plan`…）直通 harness 命令注册表，全部**不经过模型 turn** 即时执行；未解析的
+  slash 放行给模型（`/skill-name` 技能手势）
+
 ### MCP
 
 - **MCP servers**：`session/new` 的 `mcpServers` 挂载任意 MCP server（stdio +
