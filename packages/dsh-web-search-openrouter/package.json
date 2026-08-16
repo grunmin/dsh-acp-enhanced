@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-openrouter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "dsh web_search provider for OpenAI-Responses gateways that implement the native `web_search` server tool (OpenRouter-style items). Registers an `openai-responses` search provider on ctx.web so the web/tool-web surface can route through any OpenAI-Responses gateway instead of DeepSeek's Anthropic /messages endpoint.",
   "type": "module",
   "main": "lib/index.js",

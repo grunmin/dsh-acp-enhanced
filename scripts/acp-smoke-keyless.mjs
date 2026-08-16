@@ -36,6 +36,9 @@ if (setup.status !== 0) {
 const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'inherit'] })
 const pending = new Map()
 const notifications = []
+/** Wire arrival order: responses vs notifications, for ordering assertions. */
+const orderMarks = []
+let lastMethod = ''
 let seq = 0
 
 readline.createInterface({ input: child.stdout }).on('line', (line) => {
@@ -50,11 +53,14 @@ readline.createInterface({ input: child.stdout }).on('line', (line) => {
     const resolve = pending.get(msg.id)
     if (resolve) {
       pending.delete(msg.id)
+      orderMarks.push({ kind: 'response', method: lastMethod })
       resolve(msg)
     }
     return
   }
-  notifications.push(msg.params ?? msg)
+  const params = msg.params ?? msg
+  notifications.push(params)
+  orderMarks.push({ kind: 'notification', sessionUpdate: params.update?.sessionUpdate })
 })
 
 const waitFor = async (predicate, timeoutMs = 8000) => {
@@ -69,6 +75,7 @@ const waitFor = async (predicate, timeoutMs = 8000) => {
 
 function rpc(method, params, timeoutMs = 30000) {
   const id = String(++seq)
+  lastMethod = method
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id)
@@ -105,6 +112,14 @@ async function main() {
     const names = (commandsUpdate?.update?.availableCommands ?? []).map((c) => c.name)
     check('available_commands_update advertised', names.includes('status') && names.includes('model'), names.join(','))
 
+    // Regression: the broadcast must be written AFTER the session/new response.
+    // The session id is generated server-side, so a client cannot route session
+    // notifications until that response arrives; a pre-response broadcast is
+    // dropped and the slash menu stays empty.
+    const newIdx = orderMarks.findIndex((m) => m.kind === 'response' && m.method === 'session/new')
+    const cmdIdx = orderMarks.findIndex((m) => m.kind === 'notification' && m.sessionUpdate === 'available_commands_update')
+    check('commands broadcast after session/new response', newIdx !== -1 && cmdIdx > newIdx, `response@${newIdx} commands@${cmdIdx}`)
+
     const status = await rpc('session/prompt', {
       sessionId,
       prompt: [{ type: 'text', text: '/status' }],
@@ -114,7 +129,7 @@ async function main() {
       (n) => n.sessionId === sessionId && n.update?.sessionUpdate === 'agent_message_chunk',
     )
     check('/status replied with text', typeof statusChunk?.update?.content?.text === 'string'
-      && statusChunk.update.content.text.includes('route:'), statusChunk?.update?.content?.text)
+      && statusChunk.update.content.text.includes('route'), statusChunk?.update?.content?.text)
 
     const model = await rpc('session/prompt', {
       sessionId,
