@@ -16,13 +16,12 @@ dsh plugin --profile <name> add dsh-web-search-openrouter
 
 ## Configure
 
-Append two blocks to the profile's `cordis.patch.yml` (`<provider>` is your gateway
-provider id):
+Append two blocks to the profile's `cordis.patch.yml`:
 
 ```yaml
 - id: web
   config:
-    searchProvider: <provider>
+    searchProvider: openai-responses
 
 - insert:
     - id: web-search-openrouter
@@ -33,6 +32,11 @@ provider id):
         model: <your-model-id>
         apiKeyEnv: <KEY_ENV_NAME>
 ```
+
+> `searchProvider` must be exactly `openai-responses` — the search provider id this
+> package registers on `ctx.web` (see the `apply` hook). It is **not** your gateway's LLM
+> provider id: the `web` plugin matches it exactly, so a wrong value produces no error at
+> config time and only fails at the first search with `WEB_PROVIDER_CONFIGURED_MISSING`.
 
 ## License
 

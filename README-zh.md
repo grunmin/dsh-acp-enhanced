@@ -1,4 +1,4 @@
-**[English](README-en.md) | 中文**
+**[English](README.md) | 中文**
 
 # dsh-acp-enhanced
 
@@ -41,9 +41,9 @@ ACP 线上。
 ### 命令
 
 - **Slash 命令**：输入 `/` 即可见命令列表（`available_commands_update`）：`/status`
-  查看路由与遥测、`/model` 列出或切换模型，其余（`/compact` `/goal` `/permission`
-  `/plan`…）直通 harness 命令注册表，全部**不经过模型 turn** 即时执行；未解析的
-  slash 放行给模型（`/skill-name` 技能手势）
+  查看路由与遥测、`/model` 列出或切换模型（列表以等宽代码块排版，一眼全见），其余
+  （`/compact` `/goal` `/permission` `/plan`…）直通 harness 命令注册表，全部**不经过
+  模型 turn** 即时执行；未解析的 slash 放行给模型（`/skill-name` 技能手势）
 
 ### MCP
 
@@ -54,15 +54,9 @@ ACP 线上。
 
 在 Zed 的 AI Agent 面板中选择 **dsh-acp-enhanced** 后：
 
-<img src="assets/screenshots/approval-config-context.png" alt="审批弹窗与模型/推理强度切换、上下文环" width="560">
+<img src="assets/screenshots/approval-config-context.png" width="560">
 
-- 工具调用需要许可时弹出**原生审批弹窗**；输入框下方是模型、推理强度、权限预设、
-  Plan mode 配置项与上下文用量环。
-
-<img src="assets/screenshots/tool-cards-elicitation.png" alt="工具调用入参与输出、Zed 原生提问表单" width="320">
-
-- **工具卡片**可展开查看完整入参与结果预览；DSH 需要确认/选择时以 **Zed 原生表单**
-  弹出，选项即点即答。
+<img src="assets/screenshots/tool-cards-elicitation.png" width="560">
 
 ## 快速开始
 
@@ -83,6 +77,10 @@ dsh plugin --profile acp-enhanced add dsh-acp-enhanced
 **第 2 步：注册进 Zed**（在 `~/.config/zed/settings.json` 的 `agent_servers` 里注册；
 Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-zed.sh` 定位
 `node`/`dsh`）
+
+> **启动器随包发布**，绝对路径取决于第 1 步的安装方式：
+> - **npm 安装（默认）**：`$HOME/.dsh/profiles/acp-enhanced/node_modules/dsh-acp-enhanced/scripts/dsh-acp-zed.sh`。Zed 不会展开 `~` 或环境变量，请把 `$HOME` 换成你的用户目录（如 `/Users/you`）后写全绝对路径。
+> - **`link:` 开发安装**：`<你的 checkout 路径>/scripts/dsh-acp-zed.sh`。
 
 #### 最常见：DeepSeek 官方 API（默认路由）
 
@@ -167,7 +165,7 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 ```yaml
 - id: web
   config:
-    searchProvider: <provider>
+    searchProvider: openai-responses   # 子包注册在 ctx.web 上的搜索 provider id（固定值）
 
 - insert:
     - id: web-search-openrouter
@@ -178,6 +176,11 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
         model: <your-model-id>
         apiKeyEnv: <KEY_ENV_NAME>
 ```
+
+> ⚠️ `searchProvider` 必须**精确等于** `openai-responses`——这是
+> `dsh-web-search-openrouter` 注册在 `ctx.web` 上的搜索 provider id，**不是**网关的
+> LLM provider id（即上面 `DSH_ACP_PROVIDER` 填的那个）。web 插件按 id 精确匹配，
+> 填错时配置期不会报错，直到首次搜索才抛 `WEB_PROVIDER_CONFIGURED_MISSING`。
 
 ## 故障排查
 

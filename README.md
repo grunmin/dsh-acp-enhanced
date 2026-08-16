@@ -1,4 +1,4 @@
-**[中文](README.md) | English**
+**[中文](README-zh.md) | English**
 
 # dsh-acp-enhanced
 
@@ -47,7 +47,8 @@ over the ACP wire.
 ### Commands
 
 - **Slash commands**: typing `/` reveals the command list (`available_commands_update`):
-  `/status` shows the route and telemetry, `/model` lists or switches the model, everything
+  `/status` shows the route and telemetry, `/model` lists or switches the model (listings
+  render as monospace code blocks — readable at a glance), everything
   else (`/compact` `/goal` `/permission` `/plan`…) runs straight through the harness
   command registry — all executed **without a model turn**; unresolved slashes fall
   through to the model (the `/skill-name` skill gesture)
@@ -62,17 +63,9 @@ over the ACP wire.
 
 After picking **dsh-acp-enhanced** in Zed's AI Agent panel:
 
-<img src="assets/screenshots/approval-config-context.png" alt="Approval popup, model/reasoning-effort switches, context ring" width="560">
+<img src="assets/screenshots/approval-config-context.png" width="560">
 
-- Tool calls that need permission pop a **native approval prompt**; below the input box sit
-  the model, reasoning effort, permission preset, plan mode options and the context usage
-  ring.
-
-<img src="assets/screenshots/tool-cards-elicitation.png" alt="Tool call inputs and outputs, native Zed question form" width="320">
-
-- **Tool cards** expand to show full arguments and result previews; when dsh needs your
-  confirmation or a choice, the question arrives as a **native Zed form** — click an
-  option, no typing.
+<img src="assets/screenshots/tool-cards-elicitation.png" width="560">
 
 ## Quick start
 
@@ -94,6 +87,11 @@ dsh plugin --profile acp-enhanced add dsh-acp-enhanced
 **Step 2 — register in Zed** (under `agent_servers` in `~/.config/zed/settings.json`;
 Zed spawns agents with a minimal PATH, so use the shipped launcher
 `scripts/dsh-acp-zed.sh`, which locates `node`/`dsh` itself)
+
+> **The launcher ships with the package.** Its absolute path depends on how you
+> installed in Step 1:
+> - **npm install (default)**: `$HOME/.dsh/profiles/acp-enhanced/node_modules/dsh-acp-enhanced/scripts/dsh-acp-zed.sh` — replace `$HOME` with your home directory (e.g. `/Users/you`); Zed does not expand `~` or env vars, so write the full literal path.
+> - **`link:` dev install**: `<your checkout>/scripts/dsh-acp-zed.sh`.
 
 #### Most common: DeepSeek official API (the default route)
 
@@ -182,7 +180,7 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 ```yaml
 - id: web
   config:
-    searchProvider: <provider>
+    searchProvider: openai-responses   # the search provider id this sub-package registers on ctx.web (fixed value)
 
 - insert:
     - id: web-search-openrouter
@@ -193,6 +191,12 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
         model: <your-model-id>
         apiKeyEnv: <KEY_ENV_NAME>
 ```
+
+> ⚠️ `searchProvider` must be **exactly** `openai-responses` — the search provider id
+> `dsh-web-search-openrouter` registers on `ctx.web`. It is **not** your gateway's LLM
+> provider id (the one you put in `DSH_ACP_PROVIDER` above). The `web` plugin matches it
+> exactly, so a wrong value produces no error at config time and only fails at the first
+> search with `WEB_PROVIDER_CONFIGURED_MISSING`.
 
 ## Troubleshooting
 
