@@ -182,9 +182,10 @@ try {
       JSON.stringify({ path: w.path, content: w.content }))
   }
 
-  // ── prompt 1b: the plain bash tool (the case the user hit: card showed
-  //    "bash" but no command). bash is NOT a terminal, so kind must stay
-  //    'other' and rawInput must carry the exact command. ────────────────────
+  // ── prompt 1b: the plain bash tool. The bridge must present it the way
+  //    codex-acp presents command executions: kind 'execute' plus terminal
+  //    content, so Zed renders a terminal card (command + output), not a
+  //    raw-JSON "other" card. ────────────────────────────────────────────────
   const pb = await conn.prompt({
     sessionId,
     prompt: [{
@@ -193,19 +194,30 @@ try {
     }],
   })
   check('bash prompt settles', pb.stopReason === 'end_turn', `stopReason=${pb.stopReason}`)
-  const bashCall = received.toolCalls.find((t) => t.update.title === 'bash')
-  check('bash tool_call kind keeps rawInput visible', bashCall?.update?.kind === 'other',
-    JSON.stringify(bashCall?.update?.kind))
-  // The model may emit the command as one string or as command+args (and may
-  // not echo the prompt verbatim); what matters is that the command line is
-  // visible in rawInput.
-  const ri = bashCall?.update?.rawInput ?? {}
-  const cmdline = [ri.command, ...(Array.isArray(ri.args) ? ri.args : [])].filter((x) => typeof x === 'string').join(' ')
-  check('bash tool_call rawInput carries the command',
-    typeof ri.command === 'string' && ri.command.length > 0 && cmdline.trim().length > 1,
-    JSON.stringify(ri))
-  // tool_call notifications must carry the arguments (rawInput) and a kind
-  // that does NOT hide rawInput (Zed hides it for 'execute'/'edit' kinds).
+  const bashCall = received.toolCalls.find((t) => t.kind === 'tool_call' && t.update.title !== 'bash' && t.update.kind === 'execute' && t.update.content?.some((c) => c.type === 'terminal'))
+  check('bash tool_call renders as a terminal (codex-acp shape)',
+    bashCall?.update?.kind === 'execute'
+      && bashCall.update.content?.some((c) => c.type === 'terminal' && c.terminalId === bashCall.update.toolCallId),
+    JSON.stringify(bashCall?.update))
+  check('bash tool_call title is the command (shell prefix stripped)',
+    typeof bashCall?.update?.title === 'string' && bashCall.update.title.length > 0 && bashCall.update.title !== 'bash',
+    JSON.stringify(bashCall?.update?.title))
+  check('bash tool_call rawInput carries command + cwd',
+    typeof bashCall?.update?.rawInput?.command === 'string' && bashCall.update.rawInput.command.length > 0
+      && typeof bashCall?.update?.rawInput?.cwd === 'string',
+    JSON.stringify(bashCall?.update?.rawInput))
+  check('bash tool_call carries terminal_info meta',
+    bashCall?.update?._meta?.terminal_info?.terminal_id === bashCall?.update?.toolCallId,
+    JSON.stringify(bashCall?.update?._meta))
+  const bashResult = received.toolCalls.find((t) => t.kind === 'tool_call_update' && t.update.toolCallId === bashCall?.update?.toolCallId)
+  check('bash tool_call_update carries terminal_exit meta',
+    bashResult?.update?._meta?.terminal_exit?.terminal_id === bashCall?.update?.toolCallId,
+    JSON.stringify(bashResult?.update?._meta))
+  check('bash tool_call_update rawOutput is formatted_output/exit_code',
+    typeof bashResult?.update?.rawOutput?.formatted_output === 'string' && typeof bashResult.update.rawOutput.exit_code === 'number',
+    JSON.stringify(bashResult?.update?.rawOutput))
+  // Non-terminal tools must still keep rawInput visible with kind 'other'
+  // (Zed hides rawInput for 'edit' and the write card must show the path).
   const writeCall = received.toolCalls.find((t) => t.update.title === 'zed_write_text_file')
   check('tool_call kind keeps rawInput visible for writes', writeCall?.update?.kind === 'other',
     JSON.stringify(writeCall?.update?.kind))
@@ -253,8 +265,15 @@ try {
     console.log('NOTE  no zed_terminal tool_call this run; kind/rawInput checks skipped')
   }
   check('tool_call_update carries an output preview',
-    received.toolCalls.some((t) => t.kind === 'tool_call_update' && typeof t.update.rawOutput === 'string' && t.update.rawOutput.length > 0),
-    JSON.stringify(received.toolCalls.filter((t) => t.kind === 'tool_call_update').map((t) => (t.update.rawOutput ?? '').slice(0, 40))))
+    received.toolCalls.some((t) => t.kind === 'tool_call_update'
+      && (typeof t.update.rawOutput === 'string' && t.update.rawOutput.length > 0
+        || typeof t.update.rawOutput?.formatted_output === 'string')),
+    JSON.stringify(received.toolCalls.filter((t) => t.kind === 'tool_call_update').map((t) => {
+      const raw = t.update?.rawOutput
+      if (typeof raw === 'string') return raw.slice(0, 40)
+      if (typeof raw?.formatted_output === 'string') return raw.formatted_output.slice(0, 40)
+      return JSON.stringify(raw ?? '').slice(0, 40)
+    })))
 
   // ── prompt 4: ask the user through an editor form ────────────────────────
   const p4 = await conn.prompt({
