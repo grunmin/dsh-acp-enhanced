@@ -29,8 +29,10 @@ over the ACP wire.
 
 ### Zed deep integration
 
-- **Tool cards**: expand to see each call's full arguments and result preview
-  (`rawInput` / `rawOutput`), with per-kind icons
+- **Tool cards**: one-line summary in the collapsed header — `Read <path>`, the
+  executed command, `Search: <pattern>`, `Fetch: <url>`, etc. — with the full
+  arguments and result preview (`rawInput` / `rawOutput`) one click away, plus
+  per-kind icons
 - **Zed files & terminal**: `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
   put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
   real Zed terminal

@@ -26,7 +26,8 @@ ACP 线上。
 
 ### Zed 深度集成
 
-- **工具卡片**：展开可见每次调用的完整参数与结果预览（`rawInput` / `rawOutput`），
+- **工具卡片**：折叠态即显示一行摘要——`Read <路径>`、执行的命令、`Search: <模式>`、
+  `Fetch: <URL>` 等；展开可见每次调用的完整参数与结果预览（`rawInput` / `rawOutput`），
   按工具类型渲染图标
 - **Zed 文件与终端**：`zed_read_text_file` / `zed_write_text_file` / `zed_terminal` 把
   文件编辑放进 Zed 的"编辑文件"区（diff + 接受/拒绝）、命令跑在 Zed 真实终端
