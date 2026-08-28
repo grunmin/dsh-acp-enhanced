@@ -192,8 +192,11 @@ async function main() {
     if (effortOption !== undefined && illegal !== undefined) {
       const dropped = await rpc('session/set_config_option', { sessionId, configId: 'reasoning_effort', value: illegal })
       const after = (dropped.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
-      check('unsupported effort resets to model default instead of erroring',
-        after !== undefined && after.currentValue !== illegal,
+      // Non-empty and vocabulary-legal: the per-model fallback chain replaced
+      // the dropped effort with the model's own default (or its first offered
+      // effort) instead of an empty selection that renders as "unknown".
+      check('unsupported effort resets to a legal non-empty effort instead of unknown',
+        after !== undefined && String(after.currentValue) !== '' && legalEfforts.includes(String(after.currentValue)),
         `sent=${illegal} current=${JSON.stringify(after?.currentValue)}`)
     } else {
       console.log(`SKIP  unsupported-effort reset (effort option: ${effortOption !== undefined ? 'all candidates legal' : 'absent'})`)
@@ -203,12 +206,53 @@ async function main() {
     // Use a target the advertised catalog actually offers (provider-agnostic).
     const modelOption = (created.configOptions ?? []).find((o) => o.id === 'model')
     const modelValues = (modelOption?.options ?? []).flatMap((group) => (group.options ?? []).map((o) => String(o.value)))
-    const alt = modelValues.find((value) => value !== modelOption?.currentValue)
+    const origModelValue = modelOption?.currentValue
+    const origEffortOption = (created.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+    const origEfforts = (origEffortOption?.options ?? []).map((o) => String(o.value))
+    const origEffortBefore = origEffortOption?.currentValue
+    const alt = modelValues.find((value) => value !== origModelValue)
     if (alt !== undefined) {
       const switched = await rpc('session/set_config_option', { sessionId, configId: 'model', value: alt })
       const after = (switched.configOptions ?? []).find((o) => o.id === 'model')
       check('model switch via set_config_option succeeds', after?.currentValue === alt,
         `target=${alt} current=${JSON.stringify(after?.currentValue)}`)
+
+      // Regression 3: per-model effort memory. The switch carries the old
+      // model's effort onto the new one; the target must end up with a
+      // non-empty, legal effort (never "unknown"). Then switch back and
+      // assert the original route's effort is restored.
+      const altEffort = (switched.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+      const altEfforts = (altEffort?.options ?? []).map((o) => String(o.value))
+      check('effort after model switch is non-empty and legal',
+        altEffort === undefined || (String(altEffort.currentValue) !== '' && altEfforts.includes(String(altEffort.currentValue))),
+        `current=${JSON.stringify(altEffort?.currentValue)}`)
+      // Nudge the new model to a different legal effort, then switch back.
+      const different = altEfforts.find((value) => value !== String(altEffort?.currentValue))
+      if (altEffort !== undefined && different !== undefined) {
+        await rpc('session/set_config_option', { sessionId, configId: 'reasoning_effort', value: different })
+        const switchedBack = await rpc('session/set_config_option', { sessionId, configId: 'model', value: origModelValue })
+        const backEffort = (switchedBack.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+        const backEfforts = (backEffort?.options ?? []).map((o) => String(o.value))
+        const sameVocabulary = JSON.stringify(backEfforts) === JSON.stringify(origEfforts)
+        check('switch-back keeps a legal non-empty effort',
+          backEffort === undefined || (String(backEffort.currentValue) !== '' && backEfforts.includes(String(backEffort.currentValue))),
+          `current=${JSON.stringify(backEffort?.currentValue)}`)
+        if (sameVocabulary) {
+          // Same vocabulary: the carried effort is legal on the way back, so
+          // the session simply keeps it (this is what the memory restores).
+          check('switch-back keeps the carried effort (same vocabulary)',
+            backEffort === undefined || String(backEffort.currentValue) === different,
+            `restored=${JSON.stringify(backEffort?.currentValue)} expected=${different}`)
+        } else {
+          // Different vocabulary: the carried effort is unsupported on the way
+          // back, so the per-model memory must restore the original effort.
+          check('switch-back restores the remembered effort (different vocabulary)',
+            backEffort === undefined || String(backEffort.currentValue) === String(origEffortBefore),
+            `restored=${JSON.stringify(backEffort?.currentValue)} expected=${JSON.stringify(origEffortBefore)}`)
+        }
+      } else {
+        console.log(`SKIP  effort memory restore (no alternate effort${altEffort === undefined ? '; model has no effort option' : ''})`)
+      }
     } else {
       console.log('SKIP  model switch (only one advertised model)')
     }

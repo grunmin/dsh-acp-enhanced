@@ -23,7 +23,9 @@ over the ACP wire.
 
 - **Model switching**: live `provider/model` catalog dropdown (ACP grouped-select wire shape)
 - **Reasoning effort**: `reasoning_effort` dropdown — only when the routed model exposes
-  selectable efforts
+  selectable efforts; each model remembers the effort it last used (persisted per profile),
+  so switching back restores it, and a first-time model falls back to its own default — or
+  its first offered effort — instead of an empty "unknown" selection
 - **Permission presets**: read-only / workspace-write / full-access session modes
 - **Approval**: native allow-once / reject-once prompts per tool call
 
@@ -215,7 +217,7 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 |---|---|
 | `exec: dsh: not found` (status 127) | Use the shipped `dsh-acp-zed.sh` launcher (locates node/dsh itself) |
 | `no API key for provider route "xxx"` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
-| Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model; since 0.3.3 an unsupported effort resets to the model's default instead of failing the switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
+| Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model. Since 0.3.6 the bridge remembers the last effort per model (per-profile JSON): an unsupported carried effort is replaced by that model's remembered effort, else its own default, else its first offered effort — never an "unknown" dropdown, never a failed switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
 | Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
 | Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
 

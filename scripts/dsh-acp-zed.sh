@@ -61,4 +61,15 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
   fi
 fi
 
+# Derive the profile root from this launcher's own location:
+#   …/profiles/<name>/node_modules/<pkg>/scripts/dsh-acp-zed.sh
+# — three levels above this script is the profile dir. pwd -L keeps the
+# logical path (pnpm lays out node_modules as symlinks), so the climb lands
+# on the profile root. The bridge persists small per-model state (the last
+# reasoning effort per model) next to the profile's own files.
+if [ -z "${DSH_ACP_PROFILE_DIR:-}" ]; then
+  ACP_LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -L)"
+  export DSH_ACP_PROFILE_DIR="$(cd "${ACP_LAUNCHER_DIR}/../../.." && pwd -L)"
+fi
+
 exec "${DASH_BIN}" --profile acp-enhanced "$@"

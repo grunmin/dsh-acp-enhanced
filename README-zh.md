@@ -20,7 +20,10 @@ ACP 线上。
 ### 模型与权限
 
 - **模型切换**：实时 `provider/model` 目录下拉（按 ACP 规范分组线格式）
-- **推理强度**：`reasoning_effort` 下拉——仅当当前路由暴露可选 efforts 时出现
+- **推理强度**：`reasoning_effort` 下拉——仅当当前路由暴露可选 efforts 时出现；
+  每个模型都会记住它上次使用的强度（按 profile 持久化），切回时自动恢复，
+  首次切换的模型则回退到它自己的默认值——没有默认值时取第一个可选值，
+  绝不出现空的 "unknown" 选择
 - **权限预设**：read-only / workspace-write / full-access 三种会话模式
 - **审批**：工具调用弹出原生 allow-once / reject-once 审批
 
@@ -196,7 +199,7 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 |---|---|
 | `exec: dsh: not found`（status 127） | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh） |
 | `no API key for provider route "xxx"` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
-| 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上；0.3.3 起新模型不支持的 effort 会自动回退为该模型默认值，不再让整个切换失败。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
+| 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上。0.3.6 起本桥按模型记住上次使用的强度（随 profile 持久化）：不被新模型支持的 effort 会被该模型记忆值替换——没有记忆则回退其默认值，再无默认则取第一个可选值，既不会切换失败也不会出现 "unknown"。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
 
