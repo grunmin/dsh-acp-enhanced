@@ -49,6 +49,11 @@ over the ACP wire.
 - **Resume & archive**: `session/load` restores past threads (full replay);
   `session/list` / `session/delete` manage the thread archive (titled, sorted by last
   activity); live title updates
+- **Multi-root workspaces**: `sessionCapabilities.additionalDirectories` is advertised,
+  so Zed no longer shows "this agent doesn't currently support multi-root workspaces"
+  and instead passes every workspace root on `session/new` / `session/load`. All roots
+  are described to the model in the system prompt and reported on `session/list`; the
+  sandbox keeps the primary `cwd` as its single writable root (see Known limitations)
 
 ### Commands
 
@@ -226,9 +231,17 @@ node scripts/acp-resume-test.mjs      # session resume test
 
 ## Known limitations
 
-Baseline prompts only (no image/audio attachments), no `additionalDirectories`, text
-streams at block granularity, one in-flight prompt per session. MCP supports stdio and
-streamable HTTP (legacy SSE / `acp` transports are not advertised).
+Baseline prompts only (no image/audio attachments), text streams at block granularity,
+one in-flight prompt per session. MCP supports stdio and streamable HTTP (legacy SSE /
+`acp` transports are not advertised).
 `session/close` / `session/fork` / `session/resume` are not implemented (capabilities
-undeclared, compliant clients will not call them); `session/delete` removes the persisted
-directory directly because dsh persistence has no official delete API.
+undeclared, compliant clients will not call them); `session/delete` removes the
+persisted directory directly because dsh persistence has no official delete API.
+
+Multi-root workspaces are advertised and all roots are visible to the model, but dsh's
+sandbox policy resolves **one writable root per session** (the primary `cwd`, i.e.
+`session.header.cwd`) and the local sandboxes bind exactly that root for writes. Reads
+work in every root; under `workspace-write` a write under an additional root is denied
+first and needs escalation/approval, while `danger-full-access` writes everywhere.
+True multi-root write enforcement belongs in dsh core (`dsh-sandbox-policy` /
+`dsh-sandbox-local` would need a root list instead of a single root).

@@ -103,6 +103,44 @@ async function main() {
     check('config options advertised', ['model', 'permission_preset'].every((id) => ids.includes(id)), ids.join(','))
     check('permission modes advertised', Array.isArray(created.modes?.availableModes) && created.modes.availableModes.length >= 3)
 
+    // ── multi-root workspaces: capability + lifecycle params ─────────────────
+    // Zed renders "This agent doesn't currently support multi-root workspaces"
+    // unless initialize advertises sessionCapabilities.additionalDirectories;
+    // once advertised it sends every workspace root on session/new|load.
+    const extraRoot = path.resolve(repo, 'lib')
+    check('initialize advertises additionalDirectories',
+      init.agentCapabilities?.sessionCapabilities?.additionalDirectories !== undefined)
+    const multi = await rpc('session/new', {
+      cwd: process.cwd(),
+      additionalDirectories: [extraRoot, extraRoot, process.cwd()],
+      mcpServers: [],
+    })
+    check('session/new accepts additionalDirectories', typeof multi.sessionId === 'string')
+    // The JSONL persistence header becomes listable asynchronously; poll briefly.
+    let listedMulti
+    for (let attempt = 0; attempt < 20 && listedMulti === undefined; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      const listed = await rpc('session/list', { cwd: process.cwd() })
+      listedMulti = (listed.sessions ?? []).find((s) => s.sessionId === multi.sessionId)
+    }
+    check('session/list reports the deduped additional roots',
+      JSON.stringify(listedMulti?.additionalDirectories ?? []) === JSON.stringify([extraRoot]),
+      JSON.stringify(listedMulti?.additionalDirectories ?? null))
+    const reloaded = await rpc('session/load', {
+      sessionId: multi.sessionId,
+      cwd: process.cwd(),
+      additionalDirectories: [extraRoot],
+      mcpServers: [],
+    })
+    check('session/load accepts updated additionalDirectories', typeof reloaded?.sessionId === 'string' || reloaded !== undefined)
+    const bad = await rpc('session/new', {
+      cwd: process.cwd(),
+      additionalDirectories: ['relative/path'],
+      mcpServers: [],
+    }).then(() => null, (error) => error)
+    check('relative additionalDirectories rejected as invalid params',
+      bad !== null && /absolute path/.test(bad.message), String(bad?.message))
+
     // Slash commands: the adapter advertises them and handles them without a
     // model turn (this whole test runs without any API key).
     const commandsUpdate = await waitFor(

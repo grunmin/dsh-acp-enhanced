@@ -41,6 +41,10 @@ ACP 线上。
 
 - **恢复与归档**：`session/load` 恢复历史线程（完整回放）；`session/list` /
   `session/delete` 管理线程归档（带标题、按更新时间排序）；标题实时推送
+- **多根工作区**：`sessionCapabilities.additionalDirectories` 已声明，Zed 不再提示
+  "This agent doesn't currently support multi-root workspaces"，而是把所有工作区根
+  通过 `session/new` / `session/load` 传入。所有根都会写进系统提示词并在
+  `session/list` 上回报；沙箱仍以主 `cwd` 为唯一可写根（见已知限制）
 
 ### 命令
 
@@ -208,8 +212,13 @@ node scripts/acp-resume-test.mjs      # 会话恢复测试
 
 ## 已知限制
 
-仅 baseline prompt（无图片/音频附件）、不支持 `additionalDirectories`、文本按块粒度
-流式、每会话同时一个 in-flight prompt。MCP 支持 stdio 与 streamable HTTP（不声明
-legacy SSE / `acp` 传输）。`session/close` / `session/fork` / `session/resume` 未实现
-（不声明能力，合规客户端不会调用）；`session/delete` 因 dsh 持久化无官方删除 API，
-采用直接删除后端目录的方式。
+仅 baseline prompt（无图片/音频附件）、文本按块粒度流式、每会话同时一个 in-flight
+prompt。MCP 支持 stdio 与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
+`session/close` / `session/fork` / `session/resume` 未实现（不声明能力，合规客户端
+不会调用）；`session/delete` 因 dsh 持久化无官方删除 API，采用直接删除后端目录的方式。
+
+多根工作区已声明、模型可见所有根，但 dsh 沙箱策略每会话只解析**一个可写根**（主
+`cwd`，即 `session.header.cwd`），本地沙箱也只为该根开放写权限。读操作在所有根均可
+用；`workspace-write` 下对附加根的写入会先被拒绝、需升级/批准，`danger-full-access`
+下所有根均可写。真正的多根写支持需改 dsh 核心（`dsh-sandbox-policy` /
+`dsh-sandbox-local` 需要根列表而非单根）。
