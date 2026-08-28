@@ -34,7 +34,7 @@ rl.on('line', (line) => {
     return
   }
   const u = msg.params?.update ?? {}
-  if (u.sessionUpdate === 'tool_call' && (u.title === 'web_search' || u.title === 'web')) {
+  if (u.sessionUpdate === 'tool_call' && (u._meta?.name === 'web_search' || u._meta?.name === 'web')) {
     notes.webCalls += 1
   }
   if (u.sessionUpdate === 'tool_call_update' && u.status === 'error') {

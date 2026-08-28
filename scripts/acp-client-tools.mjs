@@ -184,7 +184,8 @@ try {
 
   // ── prompt 1b: the plain bash tool (the case the user hit: card showed
   //    "bash" but no command). bash is NOT a terminal, so kind must stay
-  //    'other' and rawInput must carry the exact command. ────────────────────
+  //    'other' and rawInput must carry the exact command; the collapsed title
+  //    is the model's own `description` argument (Codex-style intent line). ──
   const pb = await conn.prompt({
     sessionId,
     prompt: [{
@@ -193,7 +194,11 @@ try {
     }],
   })
   check('bash prompt settles', pb.stopReason === 'end_turn', `stopReason=${pb.stopReason}`)
-  const bashCall = received.toolCalls.find((t) => t.update.title === 'bash')
+  // bash is a local executor (kind 'other'), so locate it by name; the title
+  // is the model-provided description, not the literal tool name.
+  const bashCall = received.toolCalls.find((t) => t.update._meta?.name === 'bash')
+  check('bash tool_call found', bashCall !== undefined,
+    JSON.stringify(received.toolCalls.map((t) => ({ title: t.update.title, name: t.update._meta?.name }))))
   check('bash tool_call kind keeps rawInput visible', bashCall?.update?.kind === 'other',
     JSON.stringify(bashCall?.update?.kind))
   // The model may emit the command as one string or as command+args (and may
@@ -204,9 +209,25 @@ try {
   check('bash tool_call rawInput carries the command',
     typeof ri.command === 'string' && ri.command.length > 0 && cmdline.trim().length > 1,
     JSON.stringify(ri))
+  // Codex-style card: when the model provides a description (bash marks it
+  // required), the collapsed title IS that description (whitespace-collapsed,
+  // bounded to one line) — the exact command stays in rawInput on expand.
+  if (typeof ri.description === 'string' && ri.description.trim().length > 0) {
+    const expected = ri.description.replace(/\s+/g, ' ').trim().slice(0, 100)
+    // kind 'other' renders markdown, so the bridge escapes emphasis/code/link
+    // syntax in the title; both the plain and escaped forms are valid matches.
+    const escaped = expected.replace(/([\\*_`[\]<>])/g, '\\$1')
+    check('bash tool_call title is the model description',
+      bashCall.update.title === expected || bashCall.update.title === escaped,
+      `title=${JSON.stringify(bashCall?.update?.title)} expected=${JSON.stringify(expected)}`)
+  } else {
+    console.log('NOTE  bash call carried no description; title=description check skipped')
+  }
   // tool_call notifications must carry the arguments (rawInput) and a kind
   // that does NOT hide rawInput (Zed hides it for 'execute'/'edit' kinds).
-  const writeCall = received.toolCalls.find((t) => t.update.title === 'zed_write_text_file')
+  // Locate the write card by tool name — the collapsed title is the one-line
+  // summary ("Write <path>"), not the literal tool name.
+  const writeCall = received.toolCalls.find((t) => t.update._meta?.name === 'zed_write_text_file')
   check('tool_call kind keeps rawInput visible for writes', writeCall?.update?.kind === 'other',
     JSON.stringify(writeCall?.update?.kind))
   check('tool_call carries rawInput for the write', writeCall?.update?.rawInput?.path === '/tmp/acp-client-tools-test.txt',
@@ -242,7 +263,7 @@ try {
   } else {
     console.log('NOTE  model did not call zed_terminal this run; terminal wire checks skipped')
   }
-  const termCall = received.toolCalls.find((t) => t.update.title === 'zed_terminal')
+  const termCall = received.toolCalls.find((t) => t.update._meta?.name === 'zed_terminal')
   if (termCall) {
     check('tool_call kind is execute for terminals', termCall.update.kind === 'execute',
       JSON.stringify(termCall.update.kind))

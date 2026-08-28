@@ -26,7 +26,8 @@ ACP 线上。
 
 ### Zed 深度集成
 
-- **工具卡片**：折叠态即显示一行摘要——`Read <路径>`、执行的命令、`Search: <模式>`、
+- **工具卡片**：折叠态即显示一行摘要——`Read <路径>`、shell 命令显示模型自己给出的意图描述
+  （`description`，Codex 风格，展开可见完整命令）、`Search: <模式>`、
   `Fetch: <URL>` 等；展开可见每次调用的完整参数与结果预览（`rawInput` / `rawOutput`），
   按工具类型渲染图标
 - **Zed 文件与终端**：`zed_read_text_file` / `zed_write_text_file` / `zed_terminal` 把
@@ -189,7 +190,8 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 |---|---|
 | `exec: dsh: not found`（status 127） | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh） |
 | `no API key for provider route "xxx"` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
-| 无法切换模型 / 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
+| 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上；0.3.3 起新模型不支持的 effort 会自动回退为该模型默认值，不再让整个切换失败。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
+| 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
 
 ## 开发

@@ -1,6 +1,6 @@
 {
   "name": "dsh-acp-enhanced",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Enhanced ACP server for DeepSeek Harness: block-level streaming, usage/stat telemetry (cache hit rate, token speed, input/output tokens, context length, turns, tool timing), model & reasoning-effort switching, and permission-preset control over the ACP wire (Zed-friendly)",
   "keywords": [
     "dsh",

@@ -30,8 +30,9 @@ over the ACP wire.
 ### Zed deep integration
 
 - **Tool cards**: one-line summary in the collapsed header — `Read <path>`, the
-  executed command, `Search: <pattern>`, `Fetch: <url>`, etc. — with the full
-  arguments and result preview (`rawInput` / `rawOutput`) one click away, plus
+  model's own intent line for shell commands (`description`, Codex-style — the
+  exact command stays one click away), `Search: <pattern>`, `Fetch: <url>`, etc. —
+  with the full arguments and result preview (`rawInput` / `rawOutput`) one click away, plus
   per-kind icons
 - **Zed files & terminal**: `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
   put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
@@ -206,7 +207,8 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 |---|---|
 | `exec: dsh: not found` (status 127) | Use the shipped `dsh-acp-zed.sh` launcher (locates node/dsh itself) |
 | `no API key for provider route "xxx"` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
-| Cannot switch models / context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
+| Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model; since 0.3.3 an unsupported effort resets to the model's default instead of failing the switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
+| Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
 | Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
 
 ## Development

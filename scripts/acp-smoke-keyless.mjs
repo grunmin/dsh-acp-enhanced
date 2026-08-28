@@ -141,6 +141,40 @@ async function main() {
         && n.update.content?.text?.includes('deepseek-v4-flash'),
     ))
 
+    // ── config options: model switch + effort resilience (all keyless) ──────
+    // Regression 1 (the "cannot switch models" report): Zed re-applies its
+    // saved default_config_options on every session, and a model switch
+    // carries the session's current effort onto the new model. An effort the
+    // target model does not offer used to reject the whole switch, snapping
+    // the dropdown back. It must reset to the model default instead.
+    const effortOption = (created.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+    const legalEfforts = (effortOption?.options ?? []).map((o) => String(o.value))
+    // Pick a vocabulary-legal effort the routed model does not declare.
+    const illegal = ['medium', 'low', 'xhigh', 'minimal'].find((id) => !legalEfforts.includes(id))
+    if (effortOption !== undefined && illegal !== undefined) {
+      const dropped = await rpc('session/set_config_option', { sessionId, configId: 'reasoning_effort', value: illegal })
+      const after = (dropped.configOptions ?? []).find((o) => o.id === 'reasoning_effort')
+      check('unsupported effort resets to model default instead of erroring',
+        after !== undefined && after.currentValue !== illegal,
+        `sent=${illegal} current=${JSON.stringify(after?.currentValue)}`)
+    } else {
+      console.log(`SKIP  unsupported-effort reset (effort option: ${effortOption !== undefined ? 'all candidates legal' : 'absent'})`)
+    }
+
+    // Regression 2: the dropdown path itself — switching models must succeed.
+    // Use a target the advertised catalog actually offers (provider-agnostic).
+    const modelOption = (created.configOptions ?? []).find((o) => o.id === 'model')
+    const modelValues = (modelOption?.options ?? []).flatMap((group) => (group.options ?? []).map((o) => String(o.value)))
+    const alt = modelValues.find((value) => value !== modelOption?.currentValue)
+    if (alt !== undefined) {
+      const switched = await rpc('session/set_config_option', { sessionId, configId: 'model', value: alt })
+      const after = (switched.configOptions ?? []).find((o) => o.id === 'model')
+      check('model switch via set_config_option succeeds', after?.currentValue === alt,
+        `target=${alt} current=${JSON.stringify(after?.currentValue)}`)
+    } else {
+      console.log('SKIP  model switch (only one advertised model)')
+    }
+
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
   } finally {
     child.kill()
