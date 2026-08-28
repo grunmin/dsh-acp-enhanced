@@ -31,9 +31,12 @@ over the ACP wire.
 
 - **Tool cards**: one-line summary in the collapsed header — `Read <path>`, the
   model's own intent line for shell commands (`description`, Codex-style — the
-  exact command stays one click away), `Search: <pattern>`, `Fetch: <url>`, etc. —
-  with the full arguments and result preview (`rawInput` / `rawOutput`) one click away, plus
-  per-kind icons
+  exact command stays one click away), `Search: <pattern>`, `Fetch: <url>`, etc.
+  The card body follows the ACP best practice: file edits render as a real
+  **diff**, shell commands as a syntax-highlighted code block with the output
+  beneath, and touched files as **clickable locations** that open the file —
+  with `rawInput` / `rawOutput` kept one click away for transparency, plus
+  per-kind icons and a proper in-progress → completed/failed status lifecycle
 - **Zed files & terminal**: `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
   put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
   real Zed terminal

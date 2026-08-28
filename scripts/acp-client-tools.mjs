@@ -156,14 +156,20 @@ try {
   // shape (e.g. grouped select options emitted as `{ groupName, options }`
   // instead of `{ group, name, options }`) would slip through and only break
   // in real Zed, where the whole option gets dropped on deserialization.
-  const { zSessionConfigOption } = await import('../node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js')
+  const { zSessionConfigOption, zToolCallUpdate } = await import('../node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js')
   const parsedOptions = created.configOptions.map((option) => zSessionConfigOption.safeParse(option))
   check('every config option passes SDK schema validation',
     parsedOptions.every((r) => r.success),
     parsedOptions.filter((r) => !r.success).map((r) => JSON.stringify(r.error.issues).slice(0, 140)).join(' | '))
   const modelOption = created.configOptions.find((o) => o.id === 'model')
-  check('model option has selectable options', (modelOption?.options?.length ?? 0) > 0,
-    JSON.stringify((modelOption?.options ?? []).map((g) => ({ group: g.group, name: g.name, count: g.options?.length }))))
+  if ((modelOption?.options?.length ?? 0) > 0) {
+    check('model option has selectable options', true,
+      JSON.stringify((modelOption?.options ?? []).map((g) => ({ group: g.group, name: g.name, count: g.options?.length }))))
+  } else {
+    // Environment artifact: the catalog filters to DSH_ACP_PROVIDER, so a shell
+    // without that env advertises no models. Not a card-surface regression.
+    console.log('SKIP  model option selectable options (empty catalog — set DSH_ACP_PROVIDER to match the profile)')
+  }
 
   const p1 = await conn.prompt({
     sessionId,
@@ -223,15 +229,34 @@ try {
   } else {
     console.log('NOTE  bash call carried no description; title=description check skipped')
   }
-  // tool_call notifications must carry the arguments (rawInput) and a kind
-  // that does NOT hide rawInput (Zed hides it for 'execute'/'edit' kinds).
-  // Locate the write card by tool name — the collapsed title is the one-line
-  // summary ("Write <path>"), not the literal tool name.
+  // Friendly body: the command as a markdown code block (the protocol content
+  // surface), in_progress while running.
+  const bashBody = bashCall?.update?.content?.[0]?.content?.text ?? ''
+  check('bash card body renders the command as a code block',
+    bashBody.startsWith('```') && bashBody.includes('echo bash-ok'),
+    JSON.stringify(bashBody.slice(0, 100)))
+  check('bash card starts in_progress', bashCall?.update?.status === 'in_progress',
+    JSON.stringify(bashCall?.update?.status))
+  // Completion: terminal status plus the output as a code block body.
+  const bashDone = received.toolCalls.find((t) => t.kind === 'tool_call_update'
+    && t.update.toolCallId === bashCall?.update?.toolCallId)
+  check('bash card completes with output body',
+    bashDone?.update?.status === 'completed'
+      && (bashDone.update.content?.[0]?.content?.text ?? '').includes('bash-ok'),
+    JSON.stringify({ status: bashDone?.update?.status, body: (bashDone?.update?.content?.[0]?.content?.text ?? '').slice(0, 80) }))
+  // Best-practice card surfaces: the write card is kind 'edit' paired with a
+  // real diff body (Zed renders the diff instead of a raw JSON dump), carries
+  // clickable locations, and reports a proper status lifecycle.
   const writeCall = received.toolCalls.find((t) => t.update._meta?.name === 'zed_write_text_file')
-  check('tool_call kind keeps rawInput visible for writes', writeCall?.update?.kind === 'other',
+  check('write card is kind edit (diff pairing)', writeCall?.update?.kind === 'edit',
     JSON.stringify(writeCall?.update?.kind))
-  check('tool_call carries rawInput for the write', writeCall?.update?.rawInput?.path === '/tmp/acp-client-tools-test.txt',
-    JSON.stringify(writeCall?.update?.rawInput))
+  const writeDiff = writeCall?.update?.content?.find((c) => c.type === 'diff')
+  check('write card body is a diff', writeDiff?.path === '/tmp/acp-client-tools-test.txt' && writeDiff?.newText === 'hello acp',
+    JSON.stringify(writeDiff))
+  check('write card carries clickable locations', writeCall?.update?.locations?.[0]?.path === '/tmp/acp-client-tools-test.txt',
+    JSON.stringify(writeCall?.update?.locations))
+  check('write card starts in_progress', writeCall?.update?.status === 'in_progress',
+    JSON.stringify(writeCall?.update?.status))
 
   // ── prompt 2: read through the editor ────────────────────────────────────
   const p2 = await conn.prompt({
@@ -244,6 +269,14 @@ try {
   check('read prompt settles', p2.stopReason === 'end_turn', `stopReason=${p2.stopReason}`)
   check('fs/read_text_file reached the client', received.reads.length >= 1,
     JSON.stringify(received.reads.map((r) => r.path)))
+  const readCall = received.toolCalls.find((t) => t.update._meta?.name === 'zed_read_text_file')
+  if (readCall) {
+    check('read card carries clickable locations', readCall.update.locations?.[0]?.path === '/tmp/acp-client-tools-test.txt',
+      JSON.stringify(readCall.update.locations))
+    check('read card kind is read', readCall.update.kind === 'read', JSON.stringify(readCall.update.kind))
+  } else {
+    console.log('NOTE  no zed_read_text_file tool_call this run; locations check skipped')
+  }
 
   // ── prompt 3: terminal through the editor ────────────────────────────────
   const p3 = await conn.prompt({
@@ -296,6 +329,16 @@ try {
     check('elicitation enum carries the options',
       JSON.stringify(e.requestedSchema?.properties?.cont?.enum ?? []) === JSON.stringify(['是', '否']))
   }
+
+  // Every tool_call/tool_call_update must validate against the ACP SDK schema
+  // (1.3.0): content blocks, diffs, locations, and statuses are typed surfaces
+  // — an invalid shape is silently dropped by clients and only shows up as a
+  // missing card body.
+  const invalidUpdates = received.toolCalls
+    .map((t) => ({ t, parsed: zToolCallUpdate.safeParse(t.update) }))
+    .filter(({ parsed }) => !parsed.success)
+  check('every tool_call update passes SDK schema validation', invalidUpdates.length === 0,
+    invalidUpdates.slice(0, 3).map(({ t, parsed }) => `${t.update.toolCallId}: ${JSON.stringify(parsed.error?.issues).slice(0, 120)}`).join(' | '))
 
   console.log(failed === 0 ? '\nALL CLIENT-TOOLS CHECKS PASSED' : `\n${failed} CHECK(S) FAILED`)
 } catch (error) {

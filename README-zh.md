@@ -28,8 +28,10 @@ ACP 线上。
 
 - **工具卡片**：折叠态即显示一行摘要——`Read <路径>`、shell 命令显示模型自己给出的意图描述
   （`description`，Codex 风格，展开可见完整命令）、`Search: <模式>`、
-  `Fetch: <URL>` 等；展开可见每次调用的完整参数与结果预览（`rawInput` / `rawOutput`），
-  按工具类型渲染图标
+  `Fetch: <URL>` 等。卡片正文遵循 ACP 最佳实践：文件编辑渲染为真实 **diff 视图**、
+  shell 命令渲染为高亮代码块并在下方附输出、涉及文件以**可点击路径**呈现（点击直达）；
+  `rawInput` / `rawOutput` 保留在展开区备查，按工具类型渲染图标，
+  状态机为进行中 → 完成/失败
 - **Zed 文件与终端**：`zed_read_text_file` / `zed_write_text_file` / `zed_terminal` 把
   文件编辑放进 Zed 的"编辑文件"区（diff + 接受/拒绝）、命令跑在 Zed 真实终端
 - **原生表单提问**：`ask_user_question` → `elicitation/create` 表单，选项即点即答
