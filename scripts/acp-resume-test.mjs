@@ -94,6 +94,14 @@ try {
   const loaded = await c2.loadSession({ sessionId: sid, cwd: process.cwd(), mcpServers: [] })
   check('session/load returns config', Array.isArray(loaded.configOptions) && loaded.configOptions.length >= 2,
     JSON.stringify((loaded.configOptions ?? []).map((o) => o.id)))
+  // The loaded session already has history, so agent_preset must be locked:
+  // only the running preset is advertised (ACP has no per-option disabled
+  // state; the editor shows the current mode without offering a switch).
+  const presetOption = (loaded.configOptions ?? []).find((o) => o.id === 'agent_preset')
+  check('agent_preset is locked to the running preset after history exists',
+    presetOption !== undefined && presetOption.options?.length === 1
+      && presetOption.currentValue === presetOption.options[0].value,
+    JSON.stringify(presetOption))
   await new Promise((r) => setTimeout(r, 500)) // let replay notifications drain
   const userChunks = history.filter((h) => h.kind === 'user_message_chunk')
   const agentChunks = history.filter((h) => h.kind === 'agent_message_chunk')
