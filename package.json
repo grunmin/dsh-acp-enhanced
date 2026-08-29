@@ -1,6 +1,6 @@
 {
   "name": "dsh-acp-enhanced",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Enhanced ACP server for DeepSeek Harness: block-level streaming, usage/stat telemetry (cache hit rate, token speed, input/output tokens, context length, turns, tool timing), model & reasoning-effort switching, and permission-preset control over the ACP wire (Zed-friendly)",
   "keywords": [
     "dsh",
@@ -72,6 +72,16 @@
     "@deepseek-ai/dsh-user-approval": "0.1.0-rc.6"
   },
   "license": "MIT",
+  "author": {
+    "name": "grunmin",
+    "url": "https://github.com/grunmin"
+  },
+  "contributors": [
+    {
+      "name": "Mickey Sun",
+      "url": "https://github.com/sunstrikes"
+    }
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/grunmin/dsh-acp-enhanced.git"
