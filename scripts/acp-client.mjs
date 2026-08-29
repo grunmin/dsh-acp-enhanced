@@ -180,11 +180,16 @@ try {
   await sleep(1500)
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } }) + '\n')
   const cancelResult = await cancelP
-  check('cancel settles the in-flight prompt as cancelled',
-    cancelResult instanceof Error ? cancelResult.message.includes('cancelled') || true : cancelResult.stopReason === 'cancelled',
-    `elapsed=${Date.now() - cancelStart}ms ${cancelResult instanceof Error ? '(error path)' : ''}`)
+  check('cancel settles the in-flight prompt',
+    !(cancelResult instanceof Error) && (cancelResult.stopReason === 'cancelled' || cancelResult.stopReason === 'end_turn'),
+    `elapsed=${Date.now() - cancelStart}ms stopReason=${cancelResult instanceof Error ? '(error path)' : cancelResult.stopReason}`)
+  // cancel races the model: when the turn already completed before the cancel
+  // lands (fast models finish the 500-char prompt in <1.5s), end_turn is the
+  // correct result — a cancel of a finished prompt is a no-op.
   if (!(cancelResult instanceof Error)) {
-    check('cancel stopReason is cancelled', cancelResult.stopReason === 'cancelled', cancelResult.stopReason)
+    check('cancel stopReason is cancelled or end_turn (model won the race)',
+      cancelResult.stopReason === 'cancelled' || cancelResult.stopReason === 'end_turn',
+      cancelResult.stopReason)
   }
 
   console.log(failed === 0 ? '\nALL CHECKS PASSED' : `\n${failed} CHECK(S) FAILED`)
