@@ -16,6 +16,11 @@ ACP 线上。
   `agent_thought_chunk`），取消/重试不留半截输出
 - **完整遥测**：上下文用量环 + 缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 /
   轮次计数（`usage_update._meta` 携带全量明细）
+- **图片支持（多模态）**：当 dsh 组合挂载了附件存储（dsh 0.1.1-rc.2+，`dsh-base`
+  默认装配 `dsh-attachment-local`）时，会声明 `promptCapabilities.image` 并把粘贴/
+  上传的图片持久化进 harness 附件存储——支持视觉的模型（如 `deepseek-v4-flash-vision-exp`）
+  可按线序原生读取，图文交替不乱序。旧版栈（无附件存储）自动降级：不声明 image、
+  收到图片 prompt 明确报错。
 
 ### 模型与权限
 
@@ -211,11 +216,13 @@ node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 f
 node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
 node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI 用）
 node scripts/acp-resume-test.mjs      # 会话恢复测试
+node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
+node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 ```
 
 ## 已知限制
 
-仅 baseline prompt（无图片/音频附件）、文本按块粒度流式、每会话同时一个 in-flight
+不支持音频附件（不声明 audio 能力）、文本按块粒度流式、每会话同时一个 in-flight
 prompt。MCP 支持 stdio 与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
 `session/close` / `session/fork` / `session/resume` 未实现（不声明能力，合规客户端
 不会调用）；`session/delete` 因 dsh 持久化无官方删除 API，采用直接删除后端目录的方式。

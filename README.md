@@ -18,6 +18,12 @@ over the ACP wire.
   torn output
 - **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
   tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown)
+- **Image support (multimodal)**: when the dsh composition mounts an attachment store
+  (dsh 0.1.1-rc.2+ with `dsh-attachment-local`, the default in dsh-base), `promptCapabilities.image`
+  is advertised and pasted/uploaded images are ingested into the harness's durable attachment
+  store — a vision-capable model (e.g. `deepseek-v4-flash-vision-exp`) reads them natively,
+  in wire order with surrounding text. Older stacks (no attachment store) automatically
+  downgrade: image is not advertised and an image prompt is refused with a clear error.
 
 ### Model & permissions
 
@@ -229,13 +235,15 @@ node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal
 node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
 node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
+node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
+node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 ```
 
 ## Known limitations
 
-Baseline prompts only (no image/audio attachments), text streams at block granularity,
-one in-flight prompt per session. MCP supports stdio and streamable HTTP (legacy SSE /
-`acp` transports are not advertised).
+Audio attachments are not supported (audio capability is not advertised), text streams at
+block granularity, one in-flight prompt per session. MCP supports stdio and streamable HTTP
+(legacy SSE / `acp` transports are not advertised).
 `session/close` / `session/fork` / `session/resume` are not implemented (capabilities
 undeclared, compliant clients will not call them); `session/delete` removes the
 persisted directory directly because dsh persistence has no official delete API.
