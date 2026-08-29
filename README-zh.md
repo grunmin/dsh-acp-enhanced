@@ -31,13 +31,22 @@ ACP 线上。
   绝不出现空的 "unknown" 选择
 - **权限预设**：read-only / workspace-write / full-access 三种会话模式
 - **审批**：工具调用弹出原生 allow-once / reject-once 审批
+- **Agent 预设**：每个会话的模型侧组合（工具 + 提示词段）来自 dsh agent-presets
+  名册。`standard` 为完整编码 agent（默认），`minimal`（极简模式）只有裸 shell +
+  文件编辑器，**不含** subagent/web/todo/plan 等工具——极简 agent 不会泄漏任何
+  host 层工具；`code` 与 `cordis` 随 dsh CLI 附带，`~/.dsh/.agent-presets` 下你
+  自己的预设也会自动出现。通过 `agent_preset` 配置项、`/preset` 命令或
+  `DSH_ACP_PRESET` 环境变量（会话默认）选择；**仅空会话可切换**（还没跑过对话），
+  历史记录永远不会横跨两套工具面
 
 ### Zed 深度集成
 
 - **工具卡片**：折叠态即显示一行摘要——`Read <路径>`、shell 命令显示模型自己给出的意图描述
   （`description`，Codex 风格，展开可见完整命令）、`Search: <模式>`、
   `Fetch: <URL>` 等。卡片正文遵循 ACP 最佳实践：文件编辑渲染为真实 **diff 视图**、
-  shell 命令渲染为高亮代码块并在下方附输出、涉及文件以**可点击路径**呈现（点击直达）；
+  **bash/pwsh 命令渲染为真实终端卡片**（codex-acp 线格式：命令 + 输出 + 退出码
+   pill 都在终端面板里，告别 raw-JSON 卡片）、其他执行器渲染为高亮代码块并在下方
+  附输出、涉及文件以**可点击路径**呈现（点击直达）；
   `rawInput` / `rawOutput` 保留在展开区备查，按工具类型渲染图标，
   状态机为进行中 → 完成/失败
 - **Zed 文件与终端**：`zed_read_text_file` / `zed_write_text_file` / `zed_terminal` 把
@@ -57,9 +66,11 @@ ACP 线上。
 ### 命令
 
 - **Slash 命令**：输入 `/` 即可见命令列表（`available_commands_update`）：`/status`
-  查看路由与遥测、`/model` 列出或切换模型（列表以等宽代码块排版，一眼全见），其余
-  （`/compact` `/goal` `/permission` `/plan`…）直通 harness 命令注册表，全部**不经过
-  模型 turn** 即时执行；未解析的 slash 放行给模型（`/skill-name` 技能手势）
+  查看路由与遥测、`/model` 列出或切换模型、`/preset` 列出或切换 agent 预设
+  （列表以等宽代码块排版，一眼全见），其余（`/compact` `/goal` `/permission`
+  `/plan`…）直通 harness 命令注册表，全部**不经过模型 turn** 即时执行。所有
+  userInvocable 技能也会作为命令广播，`/ask-matt`、`/code-review`、`/tdd` 等能被
+  编辑器放行到达桥，技能正文按 dsh-tool-skill 的用户调用方式注入消息
 
 ### MCP
 
@@ -110,7 +121,8 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
       "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
       "env": {
         "DSH_ACP_PROVIDER": "deepseek-official",  // 官方 provider id
-        "DSH_ACP_MODEL": "deepseek-v4-flash"      // 官方模型 id
+        "DSH_ACP_MODEL": "deepseek-v4-flash",     // 官方模型 id
+        "DSH_ACP_PRESET": "standard"              // 可选：agent 预设 id（minimal / standard / code / cordis / 自定义）
       }
     }
   }
@@ -118,7 +130,8 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
 ```
 
 > 这两项 env 与包自带 patch 的缺省值一致，**省略也能工作**——显式写上只是让路由意图
-> 一目了然。API key 不必写进 Zed：存入 `~/.dsh/.credentials.yaml`
+> 一目了然。`DSH_ACP_PRESET` 在名册侧默认 `standard`；想让每个新会话从一开始就是
+> 某个特定模式就设置它。API key 不必写进 Zed：存入 `~/.dsh/.credentials.yaml`
 > （`DEEPSEEK_API_KEY`）由 dsh 凭据服务解析即可；启动脚本还会兜底继承正在运行的
 > `dsh web` 进程的 key。
 
@@ -129,6 +142,7 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
   // ...上面的 type/command/args/env...
   "default_config_options": {
     "model": "deepseek-official/deepseek-v4-flash",
+    "agent_preset": "standard",
     "plan_mode": false,
     "reasoning_effort": "high"
   },
@@ -217,6 +231,7 @@ node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
 node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI 用）
 node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
+node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 ```
 
@@ -232,3 +247,13 @@ prompt。MCP 支持 stdio 与 streamable HTTP（不声明 legacy SSE / `acp` 传
 用；`workspace-write` 下对附加根的写入会先被拒绝、需升级/批准，`danger-full-access`
 下所有根均可写。真正的多根写支持需改 dsh 核心（`dsh-sandbox-policy` /
 `dsh-sandbox-local` 需要根列表而非单根）。
+
+Agent 预设接管了模型侧相关行：自带 `cordis.patch.yml` 会禁用 preset 拥有的 dsh-base
+行（tool-bash/fs/subagent/todo/web/…——与官方 dsh-web-app/tui 清单逐行一致，仅少
+`hmr`），并挂载 `agent-presets` 名册（默认 `standard`；`code`/`minimal`/`cordis`
+随 dsh CLI 附带，`~/.dsh/.agent-presets` 下的自定义预设目录自动收录）。bundle 自带
+patch 会自动装配（package.json `dsh.bundle.patch`）——**不要**把它复制进 profile
+的用户层 `cordis.patch.yml`，否则 loader 在启动时因重复 entry id 拒绝装配。**升级**
+一个已有自定义用户层 patch 的 profile 时，用户层只保留你自己的定制行（例如
+acp-enhanced 行的 `includeAllProviders: true`，同时 restate provider/model/preset——
+patch 条目是整体替换、不做合并）。升级前创建的会话恢复时会落到名册默认预设上。

@@ -82,7 +82,13 @@ try {
     clientInfo: { name: 'acp-smoke-test', version: '0.1.0' },
   })
   check('initialize advertises enhanced agent', init.agentInfo?.name === 'deepseek-harness-acp-enhanced', JSON.stringify(init.agentInfo))
-  check('initialize advertises baseline-only prompts', init.agentCapabilities?.promptCapabilities?.image === false)
+  // Image support is deployment-conditional since v0.4.0: true when the
+  // composition mounts an attachment store (acp-image-e2e asserts the true
+  // side), false on bare baselines. Only the boolean shape is stable here.
+  check('initialize advertises a legal prompt capability set',
+    typeof init.agentCapabilities?.promptCapabilities?.image === 'boolean'
+      && init.agentCapabilities.promptCapabilities.audio === false,
+    JSON.stringify(init.agentCapabilities?.promptCapabilities))
   // No auth methods are advertised, so authenticate is never called by a
   // conforming client; the SDK rejects it without a methodId.
 

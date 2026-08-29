@@ -11,18 +11,123 @@
 # agent_servers env, or export before `dsh --profile <name>`):
 #   DSH_ACP_PROVIDER  provider id, e.g. deepseek-official or your gateway id
 #   DSH_ACP_MODEL     model id, e.g. deepseek-v4-flash
-# Both default to the DeepSeek official route. Overriding `agent-default-model`
-# keeps the bridge's per-session selection fallback on the same route (before
-# any request header exists), so the first prompt never falls back to a
-# non-routable default.
+#   DSH_ACP_PRESET    agent preset id, e.g. minimal / standard / code / cordis
+# Both route values default to the DeepSeek official route. Overriding
+# `agent-default-model` keeps the bridge's per-session selection fallback on
+# the same route (before any request header exists), so the first prompt never
+# falls back to a non-routable default.
 - id: agent-default-model
   config:
     provider: !!js "process.env.DSH_ACP_PROVIDER ?? 'deepseek-official'"
     model: !!js "process.env.DSH_ACP_MODEL ?? 'deepseek-v4-flash'"
 
+# ── agent presets ───────────────────────────────────────────────────────────
+#
+# The model-facing plugin set moves INTO the dsh agent-presets roster: every
+# session composes its tools/prompt sections from one preset directory
+# (standard/code/minimal/cordis, plus user-authored presets in
+# ~/.dsh/.agent-presets). The dsh CLI's profile-boot overlays the shipped
+# `config/agent-presets/` root onto the `agent-presets` row automatically, and
+# the roster itself appends the user root (`includeUserRoot` default).
+#
+# The bridge composes each session from this roster through
+# `presets.mount()` (inside the agent factory's `setup`) and exposes the choice
+# on the ACP wire as the `agent_preset` config option + `/preset` command.
+#
+# Every dsh-base model-facing row a preset now owns is disabled here, so a
+# `minimal` (极简模式) agent does not leak host-layer tools — an agent's tool
+# registry view resolves agent → preset → global. This mirrors the official
+# dsh-web-app / dsh-tui patch exactly (minus `hmr`, which is web-app-specific).
+- id: agent-instructions
+  disabled: true
+
+- id: command-compact
+  disabled: true
+
+- id: compaction-basic
+  disabled: true
+
+- id: plan-mode
+  disabled: true
+
+- id: skill-filesystem
+  disabled: true
+
+- id: tool-bash
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+- id: tool-goal
+  disabled: true
+
+- id: tool-jobs
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-ralph
+  disabled: true
+
+- id: tool-result-pruner
+  disabled: true
+
+- id: tool-skill
+  disabled: true
+
+- id: tool-str-replace-editor
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: tool-todo
+  disabled: true
+
+- id: tool-web
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+- id: workflow-worker-thread
+  disabled: true
+
 - insert:
+    # The agent-preset roster: `ctx.agentPresets`, the service the bridge
+    # composes every session's model-facing world from. No `roots` here — the
+    # dsh CLI's profile-boot overlays its shipped `config/agent-presets/`
+    # directory (standard/code/minimal/cordis, system trust) onto this row
+    # whenever a composition carries it, and the roster appends the
+    # user-authored `$DSH_HOME/.agent-presets` root.
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: !!js "process.env.DSH_ACP_PRESET ?? 'standard'"
+
+    # Host-plane services the `cordis` preset's plugin-experimentation tool
+    # waits on (dynamicCordisRunner/cordisInspect); dsh-base carries no such
+    # row — the official web app and dsh-tui insert it the same way.
+    - id: cordis-host-runner
+      name: '@deepseek-ai/dsh-cordis-host-runner'
+
     - id: acp-enhanced
       name: 'dsh-acp-enhanced'
       config:
         provider: !!js "process.env.DSH_ACP_PROVIDER ?? 'deepseek-official'"
         model: !!js "process.env.DSH_ACP_MODEL ?? 'deepseek-v4-flash'"
+        preset: !!js "process.env.DSH_ACP_PRESET"

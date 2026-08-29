@@ -188,10 +188,10 @@ try {
       JSON.stringify({ path: w.path, content: w.content }))
   }
 
-  // ── prompt 1b: the plain bash tool (the case the user hit: card showed
-  //    "bash" but no command). bash is NOT a terminal, so kind must stay
-  //    'other' and rawInput must carry the exact command; the collapsed title
-  //    is the model's own `description` argument (Codex-style intent line). ──
+  // ── prompt 1b: the plain bash tool. The bridge presents it the way
+  //    codex-acp presents command executions: kind 'execute' plus terminal
+  //    content, so Zed renders a terminal card (command + output), not a
+  //    raw-JSON "other" card. ────────────────────────────────────────────────
   const pb = await conn.prompt({
     sessionId,
     prompt: [{
@@ -200,50 +200,41 @@ try {
     }],
   })
   check('bash prompt settles', pb.stopReason === 'end_turn', `stopReason=${pb.stopReason}`)
-  // bash is a local executor (kind 'other'), so locate it by name; the title
-  // is the model-provided description, not the literal tool name.
   const bashCall = received.toolCalls.find((t) => t.update._meta?.name === 'bash')
   check('bash tool_call found', bashCall !== undefined,
     JSON.stringify(received.toolCalls.map((t) => ({ title: t.update.title, name: t.update._meta?.name }))))
-  check('bash tool_call kind keeps rawInput visible', bashCall?.update?.kind === 'other',
-    JSON.stringify(bashCall?.update?.kind))
-  // The model may emit the command as one string or as command+args (and may
-  // not echo the prompt verbatim); what matters is that the command line is
-  // visible in rawInput.
-  const ri = bashCall?.update?.rawInput ?? {}
-  const cmdline = [ri.command, ...(Array.isArray(ri.args) ? ri.args : [])].filter((x) => typeof x === 'string').join(' ')
-  check('bash tool_call rawInput carries the command',
-    typeof ri.command === 'string' && ri.command.length > 0 && cmdline.trim().length > 1,
-    JSON.stringify(ri))
-  // Codex-style card: when the model provides a description (bash marks it
-  // required), the collapsed title IS that description (whitespace-collapsed,
-  // bounded to one line) — the exact command stays in rawInput on expand.
-  if (typeof ri.description === 'string' && ri.description.trim().length > 0) {
-    const expected = ri.description.replace(/\s+/g, ' ').trim().slice(0, 100)
-    // kind 'other' renders markdown, so the bridge escapes emphasis/code/link
-    // syntax in the title; both the plain and escaped forms are valid matches.
-    const escaped = expected.replace(/([\\*_`[\]<>])/g, '\\$1')
-    check('bash tool_call title is the model description',
-      bashCall.update.title === expected || bashCall.update.title === escaped,
-      `title=${JSON.stringify(bashCall?.update?.title)} expected=${JSON.stringify(expected)}`)
-  } else {
-    console.log('NOTE  bash call carried no description; title=description check skipped')
-  }
-  // Friendly body: the command as a markdown code block (the protocol content
-  // surface), in_progress while running.
-  const bashBody = bashCall?.update?.content?.[0]?.content?.text ?? ''
-  check('bash card body renders the command as a code block',
-    bashBody.startsWith('```') && bashBody.includes('echo bash-ok'),
-    JSON.stringify(bashBody.slice(0, 100)))
+  check('bash tool_call renders as a terminal (codex-acp shape)',
+    bashCall?.update?.kind === 'execute'
+      && bashCall.update.content?.some((c) => c.type === 'terminal' && c.terminalId === bashCall.update.toolCallId),
+    JSON.stringify(bashCall?.update))
+  // The collapsed title is the command itself with any `bash -lc` wrapper
+  // stripped; the exact command + resolved cwd stay in rawInput.
+  check('bash tool_call title is the command (shell prefix stripped)',
+    typeof bashCall?.update?.title === 'string' && bashCall.update.title.length > 0 && bashCall.update.title !== 'bash',
+    JSON.stringify(bashCall?.update?.title))
+  check('bash tool_call rawInput carries command + cwd',
+    typeof bashCall?.update?.rawInput?.command === 'string' && bashCall.update.rawInput.command.length > 0
+      && typeof bashCall?.update?.rawInput?.cwd === 'string',
+    JSON.stringify(bashCall?.update?.rawInput))
+  check('bash tool_call carries terminal_info meta',
+    bashCall?.update?._meta?.terminal_info?.terminal_id === bashCall?.update?.toolCallId,
+    JSON.stringify(bashCall?.update?._meta))
   check('bash card starts in_progress', bashCall?.update?.status === 'in_progress',
     JSON.stringify(bashCall?.update?.status))
-  // Completion: terminal status plus the output as a code block body.
+  // Completion: the terminal panel closes with terminal_exit, and rawOutput
+  // carries the structured { formatted_output, exit_code } shape.
   const bashDone = received.toolCalls.find((t) => t.kind === 'tool_call_update'
     && t.update.toolCallId === bashCall?.update?.toolCallId)
-  check('bash card completes with output body',
-    bashDone?.update?.status === 'completed'
-      && (bashDone.update.content?.[0]?.content?.text ?? '').includes('bash-ok'),
-    JSON.stringify({ status: bashDone?.update?.status, body: (bashDone?.update?.content?.[0]?.content?.text ?? '').slice(0, 80) }))
+  check('bash card completes', bashDone?.update?.status === 'completed',
+    JSON.stringify(bashDone?.update?.status))
+  check('bash tool_call_update carries terminal_exit meta',
+    bashDone?.update?._meta?.terminal_exit?.terminal_id === bashCall?.update?.toolCallId,
+    JSON.stringify(bashDone?.update?._meta))
+  check('bash tool_call_update rawOutput is formatted_output/exit_code',
+    typeof bashDone?.update?.rawOutput?.formatted_output === 'string'
+      && typeof bashDone.update.rawOutput.exit_code === 'number'
+      && bashDone.update.rawOutput.formatted_output.includes('bash-ok'),
+    JSON.stringify(bashDone?.update?.rawOutput))
   // Best-practice card surfaces: the write card is kind 'edit' paired with a
   // real diff body (Zed renders the diff instead of a raw JSON dump), carries
   // clickable locations, and reports a proper status lifecycle.

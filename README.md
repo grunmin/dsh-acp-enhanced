@@ -34,6 +34,14 @@ over the ACP wire.
   its first offered effort — instead of an empty "unknown" selection
 - **Permission presets**: read-only / workspace-write / full-access session modes
 - **Approval**: native allow-once / reject-once prompts per tool call
+- **Agent presets**: per-session model-facing composition (tools + prompt sections)
+  from the dsh agent-presets roster. `standard` is the full coding agent (default),
+  `minimal` (极简模式) is a bare shell + files editor with **no** subagent/web/todo/plan
+  tools — nothing from the host layer leaks into a minimal agent; `code` and `cordis`
+  ship alongside, and your own presets under `~/.dsh/.agent-presets` appear too.
+  Choose via the `agent_preset` config option, the `/preset` command, or the
+  `DSH_ACP_PRESET` env var (per-session default); switching is only allowed while the
+  session is still blank (no turn has run), so history never straddles two tool sets.
 
 ### Zed deep integration
 
@@ -41,10 +49,12 @@ over the ACP wire.
   model's own intent line for shell commands (`description`, Codex-style — the
   exact command stays one click away), `Search: <pattern>`, `Fetch: <url>`, etc.
   The card body follows the ACP best practice: file edits render as a real
-  **diff**, shell commands as a syntax-highlighted code block with the output
-  beneath, and touched files as **clickable locations** that open the file —
-  with `rawInput` / `rawOutput` kept one click away for transparency, plus
-  per-kind icons and a proper in-progress → completed/failed status lifecycle
+  **diff**, **bash/pwsh commands as a real terminal card** (codex-acp wire
+  shape: command line + output + exit pill inside a terminal panel — no more
+  raw-JSON cards), other executors as a syntax-highlighted code block, and
+  touched files as **clickable locations** that open the file — with `rawInput`
+  / `rawOutput` kept one click away for transparency, plus per-kind icons and a
+  proper in-progress → completed/failed status lifecycle
 - **Zed files & terminal**: `zed_read_text_file` / `zed_write_text_file` / `zed_terminal`
   put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
   real Zed terminal
@@ -66,11 +76,13 @@ over the ACP wire.
 ### Commands
 
 - **Slash commands**: typing `/` reveals the command list (`available_commands_update`):
-  `/status` shows the route and telemetry, `/model` lists or switches the model (listings
-  render as monospace code blocks — readable at a glance), everything
-  else (`/compact` `/goal` `/permission` `/plan`…) runs straight through the harness
-  command registry — all executed **without a model turn**; unresolved slashes fall
-  through to the model (the `/skill-name` skill gesture)
+  `/status` shows the route and telemetry, `/model` lists or switches the model, `/preset`
+  lists or switches the agent preset (listings render as monospace code blocks — readable
+  at a glance), everything else (`/compact` `/goal` `/permission` `/plan`…) runs straight
+  through the harness command registry — all executed **without a model turn**. Every
+  user-invocable skill is advertised as a command too, so `/ask-matt`, `/code-review`,
+  `/tdd`, … reach the bridge instead of being rejected by the editor, and the skill's
+  instructions are injected into the message (dsh-tool-skill-style user invocation)
 
 ### MCP
 
@@ -124,7 +136,8 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
       "args": ["/absolute/path/to/dsh-acp-enhanced/scripts/dsh-acp-zed.sh"],
       "env": {
         "DSH_ACP_PROVIDER": "deepseek-official",  // the official provider id
-        "DSH_ACP_MODEL": "deepseek-v4-flash"      // the official model id
+        "DSH_ACP_MODEL": "deepseek-v4-flash",     // the official model id
+        "DSH_ACP_PRESET": "standard"              // optional: agent preset id (minimal / standard / code / cordis / yours)
       }
     }
   }
@@ -132,7 +145,9 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
 ```
 
 > Both env vars match the shipped patch's defaults, so **they can be omitted entirely** —
-> writing them out just makes the route explicit. The API key does not have to live in Zed:
+> writing them out just makes the route explicit. `DSH_ACP_PRESET` defaults to `standard`
+> on the roster side; set it when you want every new session to start in a specific mode.
+> The API key does not have to live in Zed:
 > store it in `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`) and the dsh credentials
 > service resolves it; the launcher also falls back to a running `dsh web` process's key.
 
@@ -143,6 +158,7 @@ Optional: pin the panel's default config options (all still changeable in the pa
   // ...the type/command/args/env above...
   "default_config_options": {
     "model": "deepseek-official/deepseek-v4-flash",
+    "agent_preset": "standard",
     "plan_mode": false,
     "reasoning_effort": "high"
   },
@@ -236,6 +252,7 @@ node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
 node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
+node scripts/terminal-codec-test.mjs  # terminal-card codec unit tests (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 ```
 
@@ -255,3 +272,16 @@ work in every root; under `workspace-write` a write under an additional root is 
 first and needs escalation/approval, while `danger-full-access` writes everywhere.
 True multi-root write enforcement belongs in dsh core (`dsh-sandbox-policy` /
 `dsh-sandbox-local` would need a root list instead of a single root).
+
+Agent presets take over the model-facing rows: the shipped `cordis.patch.yml` disables
+the dsh-base rows a preset owns (tool-bash/fs/subagent/todo/web/… — exactly the official
+dsh-web-app/tui list minus `hmr`) and mounts the `agent-presets` roster (`standard`
+default; `code`/`minimal`/`cordis` ship with the dsh CLI, your own preset dirs under
+`~/.dsh/.agent-presets` are picked up automatically). The bundle's own patch applies
+automatically (package.json `dsh.bundle.patch`) — do **not** copy it into the profile's
+user-layer `cordis.patch.yml`, or the loader rejects the duplicate entry ids at boot.
+When **upgrading** a profile that already carries a customized user-layer patch, keep
+only your custom row configs there (e.g. `includeAllProviders: true` on the
+acp-enhanced row, restating provider/model/preset since patch entries replace whole
+rows, they do not merge). A session created before the upgrade resumes under the
+roster's default preset.
