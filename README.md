@@ -156,6 +156,21 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
 > store it in `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`) and the dsh credentials
 > service resolves it; the launcher also falls back to a running `dsh web` process's key.
 
+Debugging a stalled turn (is it the model request or the tool?):
+
+```jsonc
+"env": {
+  // ...existing vars...
+  "ACP_LOG": "/Users/you/.dsh/dsh-acp-enhanced.trace.jsonl"  // append-only JSONL event trace
+}
+```
+
+Each line is one session event with wall-clock `time` (ms epoch); a turn that appears to
+hang is attributable afterwards: a **model request stall** shows a long gap between
+`step/start` and the first `assistant/chunk`, while a **tool-execution stall** shows a
+long gap between `tool/call` and `tool/result` (the result line carries `elapsedMs`).
+`prompt/settled` lines cover the full user-message round trip (stopReason + elapsed).
+
 Optional: pin the panel's default config options (all still changeable in the panel):
 
 ```jsonc
