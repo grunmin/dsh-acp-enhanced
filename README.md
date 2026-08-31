@@ -233,6 +233,57 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 > exactly, so a wrong value produces no error at config time and only fails at the first
 > search with `WEB_PROVIDER_CONFIGURED_MISSING`.
 
+### Managing the profile's plugins
+
+dsh-acp-enhanced runs in its **own profile** — `acp-enhanced`, created at
+`~/.dsh/profiles/acp-enhanced/` by the install command above — fully separate from the
+`web` profile behind `dsh web`, so plugin changes here never affect your web setup.
+
+The profile composes its plugin tree from three sources, each layer patching the ones
+before it:
+
+1. **Bundle layers** — `dsh.profile.bundles` in the profile's `package.json`: the
+   template's `@deepseek-ai/dsh-base` first, then every installed package that declares
+   `dsh.bundle` (like `dsh-acp-enhanced`), in array order.
+2. **Your user layer** — `~/.dsh/profiles/acp-enhanced/cordis.patch.yml`: id-targeted
+   row config overrides, `disabled: true` row disables, and `insert` lists (how a
+   package without `dsh.bundle` — like `dsh-web-search-openrouter` above — gets
+   mounted).
+3. **Per-run overlays** — `dsh --profile acp-enhanced --patch extra.yml`.
+
+Adjust the set with:
+
+```sh
+dsh plugin --profile acp-enhanced add <package>     # install; a dsh.bundle package auto-joins the layer stack
+dsh plugin --profile acp-enhanced remove <package>  # uninstall; auto-leaves the stack
+dsh plugin --profile acp-enhanced update [package]  # update one/all, then reconcile
+dsh --profile acp-enhanced --dump-config             # inspect the composed tree (per-layer provenance)
+```
+
+`dsh plugin` is a thin pnpm forwarder (run inside the profile directory) that
+reconciles `dsh.profile.bundles` against the installed state after every run. Two
+consequences worth knowing:
+
+- **Disabling a bundle by deleting it from `bundles` does not stick** — the package is
+  still an installed dependency, and the next `dsh plugin` run appends it right back.
+  To disable a single row without uninstalling, target it in the user layer by its
+  **row id** (not the package name — find ids in the `--dump-config` output):
+
+  ```yaml
+  - id: mnemon
+    disabled: true
+  ```
+
+- **A package without `dsh.bundle` loads nothing by itself** — it installs as a plain
+  dependency (with a one-time warning) and needs your own `insert` entry in the user
+  layer, like the `web-search-openrouter` row above. To change an existing row's
+  config, override it with `- id: <row>` + `config:` — patch entries replace the
+  whole row config, they do not merge.
+
+Changes take effect in the **next** process: Zed spawns a fresh
+`dsh --profile acp-enhanced` for every agent thread, so open a new agent thread (or
+restart Zed) after editing the profile.
+
 ## Troubleshooting
 
 | Symptom | Fix |

@@ -212,6 +212,50 @@ dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
 > LLM provider id（即上面 `DSH_ACP_PROVIDER` 填的那个）。web 插件按 id 精确匹配，
 > 填错时配置期不会报错，直到首次搜索才抛 `WEB_PROVIDER_CONFIGURED_MISSING`。
 
+### 管理 profile 的插件
+
+dsh-acp-enhanced 跑在**独立的 profile** 里——`acp-enhanced`（由上面的安装命令创建于
+`~/.dsh/profiles/acp-enhanced/`），与 `dsh web` 背后的 `web` profile 完全隔离，
+在这里增删改插件不会影响 web 侧的任何配置。
+
+profile 的插件树由三层组合而成，后层修补前层：
+
+1. **bundle 层**：profile `package.json` 的 `dsh.profile.bundles`——模板自带的
+   `@deepseek-ai/dsh-base` 在前，随后是每个声明了 `dsh.bundle` 的已安装包（如
+   `dsh-acp-enhanced`），按数组顺序排列。
+2. **用户层**：`~/.dsh/profiles/acp-enhanced/cordis.patch.yml`——按 id 定位的行配置
+   覆写、`disabled: true` 行禁用，以及 `insert` 挂载（无 `dsh.bundle` 的包——如上面
+   的 `dsh-web-search-openrouter`——就靠它装配）。
+3. **临时覆盖**：`dsh --profile acp-enhanced --patch extra.yml`。
+
+调整插件集：
+
+```sh
+dsh plugin --profile acp-enhanced add <package>     # 安装；声明 dsh.bundle 的包自动加入层栈
+dsh plugin --profile acp-enhanced remove <package>  # 卸载；自动退出层栈
+dsh plugin --profile acp-enhanced update [package]  # 更新一个/全部并 reconcile
+dsh --profile acp-enhanced --dump-config             # 查看组合后的完整树（标注每行来自哪一层）
+```
+
+`dsh plugin` 本质是在 profile 目录里转发 pnpm，并在每次运行后按安装状态 reconcile
+`dsh.profile.bundles`。两个值得知道的推论：
+
+- **靠从 `bundles` 里删条目来禁用 bundle 是禁不住的**——包仍是已安装依赖，下一次
+  `dsh plugin` 运行会原样加回来。想不禁载地禁用某一行，请在用户层按**行 id**（不是
+  包名，id 可在 `--dump-config` 输出里查）定位：
+
+  ```yaml
+  - id: mnemon
+    disabled: true
+  ```
+
+- **无 `dsh.bundle` 的包自身不会装配**——它只作为普通依赖安装（带一次性警告），需要
+  像上面的 `web-search-openrouter` 行那样在用户层 `insert` 挂载；要改已有行的配置，
+  用 `- id: <行>` + `config:` 覆写——patch 条目是整行替换、不做合并。
+
+改动在**下一个**进程生效：Zed 为每个 agent 线程拉起一个全新的
+`dsh --profile acp-enhanced`，编辑 profile 后新开 agent 线程（或重启 Zed）即可。
+
 ## 故障排查
 
 | 症状 | 处理 |
