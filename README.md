@@ -59,7 +59,10 @@ over the ACP wire.
   put file edits into Zed's "edited files" area (diff + accept/reject) and commands into a
   real Zed terminal
 - **Native form questions**: `ask_user_question` → `elicitation/create` form, click an
-  option, no typing
+  option — or type a custom answer when none of them fit: options render with their
+  descriptions, each option-backed question gets a free-text "Custom answer" field, and a
+  custom answer replaces the single selection / accompanies a multi-select (same semantics
+  as dsh's native question card)
 - **Plan panel**: plan mode toggle → "planning" status bar in Zed
 
 ### Sessions

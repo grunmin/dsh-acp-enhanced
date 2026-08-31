@@ -76,9 +76,24 @@ const client = {
   async unstable_createElicitation(params) {
     console.log('CLIENT elicitation/create (form) ->', JSON.stringify({ message: params.message?.slice(0, 60), props: Object.keys(params.requestedSchema?.properties ?? {}) }))
     received.elicitations.push(params)
+    const properties = params.requestedSchema?.properties ?? {}
+    const customKeys = Object.keys(properties).filter((key) => key.endsWith('__custom'))
     const content = {}
-    for (const id of Object.keys(params.requestedSchema?.properties ?? {})) {
-      content[id] = '是'
+    for (const [id, property] of Object.entries(properties)) {
+      if (id.endsWith('__custom')) {
+        // The first elicitation leaves custom fields empty (they are optional;
+        // the selection must win); the second answers the first one with free
+        // text to exercise the custom-override path.
+        content[id] = received.elicitations.length === 2 && id === customKeys[0] ? '我自己写' : ''
+        continue
+      }
+      if (Array.isArray(property?.oneOf) && property.oneOf.length > 0) {
+        content[id] = property.oneOf[0].const
+      } else if (Array.isArray(property?.items?.anyOf) && property.items.anyOf.length > 0) {
+        content[id] = [property.items.anyOf[0].const]
+      } else {
+        content[id] = '文本回答'
+      }
     }
     return { action: 'accept', content }
   },
@@ -299,7 +314,7 @@ try {
   }
   check('tool_call_update carries an output preview',
     received.toolCalls.some((t) => t.kind === 'tool_call_update' && typeof t.update.rawOutput === 'string' && t.update.rawOutput.length > 0),
-    JSON.stringify(received.toolCalls.filter((t) => t.kind === 'tool_call_update').map((t) => (t.update.rawOutput ?? '').slice(0, 40))))
+    JSON.stringify(received.toolCalls.filter((t) => t.kind === 'tool_call_update').map((t) => JSON.stringify(t.update.rawOutput ?? '').slice(0, 60))))
 
   // ── prompt 4: ask the user through an editor form ────────────────────────
   const p4 = await conn.prompt({
@@ -317,9 +332,42 @@ try {
     check('elicitation carries session id', e.sessionId === sessionId)
     check('elicitation form has the question property',
       e.requestedSchema?.properties?.cont !== undefined && e.mode === 'form')
-    check('elicitation enum carries the options',
-      JSON.stringify(e.requestedSchema?.properties?.cont?.enum ?? []) === JSON.stringify(['是', '否']))
+    check('elicitation options are titled consts',
+      JSON.stringify((e.requestedSchema?.properties?.cont?.oneOf ?? []).map((o) => o.const)) === JSON.stringify(['是', '否'])
+        && e.requestedSchema?.properties?.cont?.oneOf?.every((o) => typeof o.title === 'string'),
+      JSON.stringify(e.requestedSchema?.properties?.cont?.oneOf ?? []))
+    check('elicitation adds an optional custom-answer field',
+      e.requestedSchema?.properties?.cont__custom?.type === 'string'
+        && !(e.requestedSchema?.required ?? []).includes('cont__custom'),
+      JSON.stringify(e.requestedSchema?.properties?.cont__custom ?? null))
   }
+
+  // ── prompt 4b: custom answers + option-free questions ────────────────────
+  // The mock answers deploy with free text (custom must replace the single
+  // selection) and note with plain free text (custom must carry it).
+  const p4b = await conn.prompt({
+    sessionId,
+    prompt: [{
+      type: 'text',
+      text: '使用 ask_user_question 工具向用户提两个问题：第一个 id 为 deploy，问题为 "部署到哪个环境？"，选项 ["staging","production"]；第二个 id 为 note，问题为 "还有什么要补充的吗？"（不带选项）。不要用其他工具。',
+    }],
+  })
+  check('custom-answer prompt settles', p4b.stopReason === 'end_turn', `stopReason=${p4b.stopReason}`)
+  const e2 = received.elicitations[1]
+  check('second elicitation adds custom field only to the option-backed question',
+    e2?.requestedSchema?.properties?.deploy !== undefined
+      && e2.requestedSchema.properties.deploy__custom !== undefined
+      && e2.requestedSchema.properties.note !== undefined
+      && e2.requestedSchema.properties.note__custom === undefined,
+    JSON.stringify(e2 ? Object.keys(e2.requestedSchema?.properties ?? {}) : e2))
+  const askCalls = received.toolCalls.filter((t) => t.kind === 'tool_call' && t.update._meta?.name === 'ask_user_question')
+  const lastAskId = askCalls.at(-1)?.update?.toolCallId
+  const askResult = received.toolCalls.find((t) => t.kind === 'tool_call_update'
+    && t.update.toolCallId === lastAskId && t.update.status === 'completed')
+  check('custom answer replaces the selection, free text lands as custom',
+    typeof askResult?.update?.rawOutput === 'string'
+      && askResult.update.rawOutput.includes('我自己写') && askResult.update.rawOutput.includes('文本回答'),
+    JSON.stringify(askResult?.update?.rawOutput ?? null).slice(0, 200))
 
   // Every tool_call/tool_call_update must validate against the ACP SDK schema
   // (1.3.0): content blocks, diffs, locations, and statuses are typed surfaces

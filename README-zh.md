@@ -51,7 +51,9 @@ ACP 线上。
   状态机为进行中 → 完成/失败
 - **Zed 文件与终端**：`zed_read_text_file` / `zed_write_text_file` / `zed_terminal` 把
   文件编辑放进 Zed 的"编辑文件"区（diff + 接受/拒绝）、命令跑在 Zed 真实终端
-- **原生表单提问**：`ask_user_question` → `elicitation/create` 表单，选项即点即答
+- **原生表单提问**：`ask_user_question` → `elicitation/create` 表单，选项即点即答；
+  选项带描述展示，每个带选项的问题附一个"自定义答案"输入框——选项都不合适时可自由输入，
+  单选时自定义答案覆盖所选、多选时与所选并存（与 dsh 原生提问卡片语义一致）
 - **Plan 面板**：plan mode 开关 → Zed 底部"规划中"状态条
 
 ### 会话
