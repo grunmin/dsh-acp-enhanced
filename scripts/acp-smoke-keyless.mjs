@@ -17,6 +17,12 @@ import readline from 'node:readline'
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const profile = `acp-ci-${process.pid}`
 
+// Deterministic ordering coverage: slow the config-option assembly so the
+// command broadcast must cross real event-loop turns (the cold-runner
+// condition that raced it past the session/new response on CI). Unset to
+// run against an un-delayed server.
+process.env.DSH_TEST_SLOW_CATALOG_MS = process.env.DSH_TEST_SLOW_CATALOG_MS ?? '150'
+
 let failed = 0
 function check(label, ok, detail = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`)
