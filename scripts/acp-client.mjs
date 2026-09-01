@@ -111,6 +111,14 @@ try {
   check('permission_preset option present', presetOption !== undefined,
     `current=${presetOption?.currentValue ?? '(unset)'}`)
 
+  // Optional model preselect: DSH_ACP_E2E_MODEL="provider/model" pins the
+  // route before the first prompt, for hosts whose saved default model is too
+  // slow for a smoke test. Also exercises the model switch path itself.
+  if (process.env.DSH_ACP_E2E_MODEL) {
+    await rpc('session/set_config_option', { sessionId, configId: 'model', value: process.env.DSH_ACP_E2E_MODEL })
+    console.log(`INFO  model preselected via config option: ${process.env.DSH_ACP_E2E_MODEL}`)
+  }
+
   // ── session/prompt with streaming + telemetry ────────────────────────────
   const notes = { textBlocks: 0, usageUpdates: 0, toolCalls: 0, toolUpdates: 0 }
   rl.on('line', (line) => {
