@@ -287,12 +287,73 @@ Changes take effect in the **next** process: Zed spawns a fresh
 `dsh --profile acp-enhanced` for every agent thread, so open a new agent thread (or
 restart Zed) after editing the profile.
 
+## Compatibility
+
+One bridge binary runs against every harness generation from **0.1.0-rc.6** through
+**0.1.2-alpha.2+**. The 0.1.2-alpha line rewrote two APIs this bridge consumes, and the
+bridge absorbs both generations at runtime — no fork, no version flag:
+
+| API | ≤ 0.1.1-rc.2 (legacy) | ≥ 0.1.2-alpha.2 (projection) | Bridge behavior |
+|---|---|---|---|
+| running preset of a session | `resolveSessionPreset({header, events})` export | export removed; `agentPreset` session projection | folds the log itself (last `agent-preset/selected` wins, header fallback) — identical semantics in both |
+| preset resolution failure | `UnknownPresetError` / `PresetMountError` | `RemoteError`, codes `agent-preset/*` | `isPresetClientError`: RemoteError duck-typed by `isDSHRemoteError` + `code`, legacy classes identified structurally by `presetId` (never cross-copy `instanceof`) |
+| `permissionPresets.current(x)` | `current(events)` | `current(session)` (via `permissionState`) | `currentPermissionMode` probes the service instance per call |
+
+Two invariants make this safe (same conclusions the openma `deepseek-harness-acp` adapter
+reached independently): **value-import pure helpers only** (`createUserMessage`,
+`ReasoningEffortId`, `SessionId`, `defineTool`, … — a foreign copy is functionally
+equivalent), and **service-generation questions are answered by probing the service
+instance**, because the booting CLI — not this package's dependency range — decides the
+service generation. `dsh-agent-presets` is imported as a *namespace*: 0.1.2-alpha.1
+removed its named exports, and a named import would fail at ESM link time.
+
+Check both generations from a clean tree:
+
+```sh
+node scripts/compat-check.mjs   # installs 0.1.0-rc.6 + 0.1.2-alpha.2+ sets, imports the bridge from each
+```
+
+### Dev checkout: repo-pinned CLI, isolated home
+
+When the launcher runs **from a checkout** (`link:` install), it resolves the dsh CLI in
+this order:
+
+1. `$DSH_PATH` — an explicit dsh binary, or a directory whose `node_modules/.bin/dsh` holds one
+2. the repo-pinned CLI — `<repo>/node_modules/.bin/dsh` (this package's `@deepseek-ai/dsh`
+   devDependency, currently 0.1.2-alpha.2)
+3. global fallback — `dsh` on PATH / npx cache / npm prefix (the legacy behavior; a fresh
+   clone without `pnpm install` degrades to it)
+
+Whenever (1) or (2) wins, the profile boots under an **isolated home**
+(`DSH_ACP_HOME`, default `~/.dsh-acp`): dsh heals its whole dependency closure into
+`$DSH_HOME/profiles/node_modules` on every boot — a dir shared by every profile under that
+home whose content flips to whichever CLI booted last — so a second CLI generation must not
+share a home with e.g. a running `dsh web`. The default home is never touched by this path.
+Harness-injected `DSH_HOME=$HOME/.dsh` in the child environment (dsh exports it into every
+agent/tool process) is detected and overridden, not honored — only a `DSH_HOME` pointing
+away from the default home is respected; to force the pinned CLI onto the default home,
+set `DSH_ACP_HOME=$HOME/.dsh` deliberately.
+
+Bootstrap the isolated home once (profile without `dsh-mnemon` — it does not support the
+0.1.2-alpha harness — plus your old profile's user rows ported verbatim and credentials/settings
+migration, the `subagent-model-selection-settings` host service the 0.1.2-alpha `standard`
+preset requires, and the DeepSeek plugin-package inventory reporter disabled):
+
+```sh
+scripts/init-acp-home.sh            # idempotent; re-runs never clobber your files
+```
+
+Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`, and the new generation reads old-generation logs (verified: history replay and the preset fold work cross-generation). Old threads therefore only need their session history copied to the new home — `scripts/init-acp-home.sh` prints the one-liner (or pass `--copy-sessions`); it copies nothing by default, because the default home's tree also holds every web-profile session.
+
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | `exec: dsh: not found` (status 127) | Use the shipped `dsh-acp-zed.sh` launcher (locates node/dsh itself) |
 | `no API key for provider route "xxx"` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
+| `SyntaxError: ... 'PresetMountError'` | You are running a pre-0.7.0 bridge copy against a 0.1.2-alpha host — update this package |
+| `modelSelectionSettings requires ... in the Host scope` | A 0.1.2-alpha host without the `subagent-model-selection-settings` row — run `scripts/init-acp-home.sh` (or add the insert row to your user layer, see the script) |
+| Old threads start empty after a host upgrade | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history to the isolated home (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
 | Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model. Since 0.3.6 the bridge remembers the last effort per model (per-profile JSON): an unsupported carried effort is replaced by that model's remembered effort, else its own default, else its first offered effort — never an "unknown" dropdown, never a failed switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
 | Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
 | Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
@@ -300,15 +361,26 @@ restart Zed) after editing the profile.
 ## Development
 
 ```sh
+node scripts/compat-check.mjs         # cross-generation link check (0.1.0-rc.6 + 0.1.2-alpha.2+ scratch installs)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
 node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
 node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
-node scripts/terminal-codec-test.mjs  # terminal-card codec unit tests (no network)
+node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
+scripts/init-acp-home.sh              # bootstrap/refresh the isolated home (~/.dsh-acp)
 ```
+
+DevDependency pins for the harness packages use the same ranges the pinned
+`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.2-alpha.2`), so the repo's tree and a fresh
+CLI install resolve one coherent family — exact patch pins here mixed with the CLI's
+range-resolved closure produce a split closure (two versions of one name) that breaks
+profile boots with export-not-found errors. After changing those pins, reinstall cleanly
+(`rm -rf node_modules && pnpm install`): stale store entries poison the profile heal.
+`pnpm-workspace.yaml` approves the CLI closure's build scripts (node-pty prebuilds, koffi)
+— they are runtime requirements when the repo CLI boots the profile.
 
 ## Known limitations
 

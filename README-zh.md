@@ -258,12 +258,62 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
 改动在**下一个**进程生效：Zed 为每个 agent 线程拉起一个全新的
 `dsh --profile acp-enhanced`，编辑 profile 后新开 agent 线程（或重启 Zed）即可。
 
+## 兼容性
+
+同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.2-alpha.2+** 的每一代 harness 上。0.1.2-alpha
+线重写了本桥消费的两个 API，桥在运行期同时吸收两代——不分叉、不加版本开关：
+
+| API | ≤ 0.1.1-rc.2（旧代） | ≥ 0.1.2-alpha.2（projection 代） | 桥的做法 |
+|---|---|---|---|
+| 会话的运行中 preset | `resolveSessionPreset({header, events})` 导出 | 导出已移除；`agentPreset` session projection | 自行折叠事件日志（最后一个 `agent-preset/selected` 胜出、header 兜底）——两代语义一致 |
+| preset 解析失败 | `UnknownPresetError` / `PresetMountError` | `RemoteError`，错误码 `agent-preset/*` | `isPresetClientError`：RemoteError 按 `isDSHRemoteError` + `code` 鸭子类型识别；旧类按 `presetId` 结构识别（绝不跨副本 `instanceof`） |
+| `permissionPresets.current(x)` | `current(events)` | `current(session)`（经 `permissionState`） | `currentPermissionMode` 每次调用前探测服务实例 |
+
+两条不变量保证其安全性（openma 的 `deepseek-harness-acp` 适配器独立得出了同样结论）：**只值导入纯
+helper**（`createUserMessage`、`ReasoningEffortId`、`SessionId`、`defineTool`…… 外来副本功能等价）；**服务的代际问题按服务实例探测回答**——决定服务代际的是启动它的 CLI，不是本包的依赖范围。`dsh-agent-presets`
+按 *命名空间* 导入：0.1.2-alpha.1 删除了其命名导出，命名导入会在 ESM 链接期直接失败。
+
+从干净依赖树校验两代：
+
+```sh
+node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 与 0.1.2-alpha.2+ 两套，逐一导入本桥
+```
+
+### 开发检出：仓库锁定 CLI + 独立 home
+
+启动器**从检出目录**（`link:` 安装）运行时，按以下顺序解析 dsh CLI：
+
+1. `$DSH_PATH` —— 显式指定的 dsh 二进制，或其 `node_modules/.bin/dsh` 内含 dsh 的目录
+2. 仓库锁定的 CLI —— `<repo>/node_modules/.bin/dsh`（本包的 `@deepseek-ai/dsh`
+   devDependency，当前 0.1.2-alpha.2）
+3. 全局兜底 —— PATH / npx 缓存 / npm 前缀 里的 `dsh`（旧行为；未 `pnpm install` 的全新检出退化为它）
+
+命中 (1) 或 (2) 时，profile 在**独立 home**（`DSH_ACP_HOME`，默认 `~/.dsh-acp`）下启动：dsh
+每次启动都会把自身依赖闭包 heal 进 `$DSH_HOME/profiles/node_modules`——该目录被同 home 下所有
+profile 共享、内容随最后启动的 CLI 翻转——因此第二个 CLI 代际不得与运行中的 `dsh web`
+等共享 home。此路径永不触碰默认 home。harness 注入到子进程的 `DSH_HOME=$HOME/.dsh`
+（dsh 会向每个 agent/工具进程导出它）会被识别并覆盖而非沿用；只有指向默认 home 之外的
+`DSH_HOME` 才被尊重；确要将锁定 CLI 跑在默认 home 上，请显式设 `DSH_ACP_HOME=$HOME/.dsh`。
+
+一次性引导独立 home（建**不含** `dsh-mnemon` 的 profile——它不支持 0.1.2-alpha harness——并逐字移植旧
+profile 的用户层行、迁移凭据/设置、挂 0.1.2-alpha `standard` preset 所需的
+`subagent-model-selection-settings` 宿主服务、关闭 DeepSeek 插件清单上报）：
+
+```sh
+scripts/init-acp-home.sh            # 幂等；重跑不会覆盖你的文件
+```
+
+两代 harness 都把会话持久化在 `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`，且新代可读旧代日志（已验证：历史回放与 preset 折叠跨代工作）。因此旧线程只需把会话历史拷到新 home——`scripts/init-acp-home.sh` 会打印这条命令（或加 `--copy-sessions`）；默认不拷贝，因为默认 home 的目录里还有全部 web profile 会话。
+
 ## 故障排查
 
 | 症状 | 处理 |
 |---|---|
 | `exec: dsh: not found`（status 127） | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh） |
 | `no API key for provider route "xxx"` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
+| `SyntaxError: ... 'PresetMountError'` | 你在 0.1.2-alpha 宿主上运行 0.7.0 之前的桥副本——升级本包 |
+| `modelSelectionSettings requires ... in the Host scope` | 0.1.2-alpha 宿主缺少 `subagent-model-selection-settings` 行——运行 `scripts/init-acp-home.sh`（或按脚本模板在用户层补 insert 行） |
+| 宿主升级后旧线程变空白 | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进独立 home（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
 | 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上。0.3.6 起本桥按模型记住上次使用的强度（随 profile 持久化）：不被新模型支持的 effort 会被该模型记忆值替换——没有记忆则回退其默认值，再无默认则取第一个可选值，既不会切换失败也不会出现 "unknown"。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
@@ -271,6 +321,7 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
 ## 开发
 
 ```sh
+node scripts/compat-check.mjs         # 跨代链接检查（0.1.0-rc.6 + 0.1.2-alpha.2+ 临时安装）
 node scripts/acp-client.mjs           # 端到端冒烟（需要 API key）
 node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan）
 node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
@@ -279,7 +330,15 @@ node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
+scripts/init-acp-home.sh              # 引导/刷新独立 home（~/.dsh-acp）
 ```
+
+harness 包的 devDependency 与锁定的 `@deepseek-ai/dsh` CLI 声明相同的 range（如
+`^0.1.2-alpha.2`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
+锁定、与 CLI 的 range 闭包混存会得到分裂闭包（同名包两个版本），profile 启动时报
+export-not-found。改这些锁定后务必干净重装（`rm -rf node_modules && pnpm install`）：残留
+store 目录会污染 profile heal。`pnpm-workspace.yaml` 放行了 CLI 闭包的构建脚本
+（node-pty prebuild、koffi）——仓库 CLI 启动 profile 时它们就是运行时依赖。
 
 ## 已知限制
 
