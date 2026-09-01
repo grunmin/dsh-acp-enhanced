@@ -1,0 +1,12 @@
+# pnpm 10 blocks dependency build scripts unless approved. The repo-pinned
+# @deepseek-ai/dsh CLI (devDependency) is booted as a real dsh host by
+# scripts/dsh-acp-zed.sh, so its dependency closure IS the runtime: these
+# native/-generator builds must run for the profile composition to work
+# (node-pty for persistent shells, koffi for the Windows persistence path,
+# protobufjs codegen, subprocess-local helpers, genai adapter support).
+onlyBuiltDependencies:
+  - '@deepseek-ai/dsh-subprocess-local'
+  - '@google/genai'
+  - koffi
+  - node-pty
+  - protobufjs
