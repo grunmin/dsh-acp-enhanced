@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Verifies the acp-enhanced web_search provider routes through an
- * OpenAI-Responses gateway. Spawns `dsh --profile acp-enhanced`, drives a
- * prompt that must call the model-facing `web` tool, and asserts a `tool_call`
- * named `web` completed (i.e. the registered `openai-responses` search
- * provider answered the gateway).
+ * Verifies the acp-enhanced model-facing `web_search` tool end-to-end through
+ * whatever `ctx.web` search provider the profile has mounted. Spawns
+ * `dsh --profile acp-enhanced`, drives a prompt that must call the
+ * `web_search` tool, and asserts the tool completed with source URLs in the
+ * reply.
  */
 import { spawn } from 'node:child_process'
 import readline from 'node:readline'
@@ -80,7 +80,7 @@ try {
   check('reply contains source URLs', /https?:\/\//.test(all), 'has http link(s)')
   check('reply cites multiple distinct sources', (all.match(/https?:\/\//g) ?? []).length >= 2, '>=2 links')
 
-  console.log(failed === 0 ? '\nALL CHECKS PASSED (web_search via OpenAI-Responses gateway)' : `\n${failed} CHECK(S) FAILED`)
+  console.log(failed === 0 ? '\nALL CHECKS PASSED (web_search)' : `\n${failed} CHECK(S) FAILED`)
 } catch (error) {
   console.error('\nFATAL:', error.message)
   failed += 1

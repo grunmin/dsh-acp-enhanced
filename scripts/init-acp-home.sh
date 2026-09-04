@@ -12,7 +12,7 @@
 #   1. profile 'acp-enhanced' via `dsh plugin add` (bundles:
 #      @deepseek-ai/dsh-base + dsh-acp-enhanced — deliberately WITHOUT
 #      dsh-mnemon, which does not support the 0.1.2-alpha harness)
-#   2. dsh-web-search-openrouter as a plain dependency
+#   2. bundle-set verification (the profile must never carry dsh-mnemon)
 #   3. the user-layer cordis.patch.yml: your old profile's user rows ported
 #      verbatim (web-search routing and friends — machine-specific values
 #      never shipped with this repo), plus the subagent-model-selection host
@@ -70,9 +70,6 @@ if [ -n "${BAD_BUNDLES}" ]; then
   echo "init-acp-home: unexpected bundle set (${BAD_BUNDLES}); fix ${PROFILE_DIR}/package.json by hand" >&2
   exit 1
 fi
-if ! grep -q '"dsh-web-search-openrouter"' "${PROFILE_DIR}/package.json"; then
-  "${CLI}" plugin --profile acp-enhanced add 'dsh-web-search-openrouter@^0.1.0' >/dev/null
-fi
 echo "==> profile bundles verified (base + acp-enhanced, no dsh-mnemon)"
 
 # 3. User-layer patch: appended to the profile's template (init ships a
@@ -97,7 +94,7 @@ else
   # exists — copied VERBATIM, because a gateway endpoint or a key env name is
   # local deployment data that must live only in $DSH_HOME, never in this
   # repo. Without an old profile, a commented web-search template is left to
-  # fill in (README: optional web_search section).
+  # fill in (README: web search section).
   OLD_USER_PATCH="${OLD_HOME}/profiles/acp-enhanced/cordis.patch.yml"
   if [ -f "${OLD_USER_PATCH}" ]; then
     cp "${OLD_USER_PATCH}" "${USER_PATCH}"
@@ -112,22 +109,12 @@ else
 # Bootstrapped by scripts/init-acp-home.sh — edit freely, it is never
 # overwritten by re-runs.
 
-# Optional web_search routing through an OpenAI-Responses gateway — uncomment
-# and fill in your gateway's values (README: optional web_search section).
-# The provider id "openai-responses" is what dsh-web-search-openrouter
-# registers on ctx.web; searchProvider must match it exactly.
+# Web search: the bridge ships no provider — mount any ctx.web provider you
+# like here (user-layer insert rows for a plain package, or `dsh plugin add`
+# for one declaring dsh.bundle) and point the web row at its provider id:
 # - id: web
 #   config:
-#     searchProvider: openai-responses
-#
-# - insert:
-#     - id: web-search-openrouter
-#       name: 'dsh-web-search-openrouter'
-#       config:
-#         enabled: true
-#         baseURL: http://<gateway-host>:<port>/v1
-#         model: <your-model-id>
-#         apiKeyEnv: <KEY_ENV_NAME>
+#     searchProvider: <your-provider-id>
 PLACEHOLDER
   fi
 

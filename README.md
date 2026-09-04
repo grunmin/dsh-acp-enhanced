@@ -207,36 +207,14 @@ node scripts/acp-client.mjs                    # official default route, no env;
 DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # only for a custom route
 ```
 
-### Optional: route web_search through the same gateway
+### Web search
 
-If the gateway implements the OpenAI Responses `web_search` server tool, you can route
-search through it too (reusing the same credential). Install the sub-package and append
-two blocks to the profile's `cordis.patch.yml`:
-
-```sh
-dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
-```
-
-```yaml
-- id: web
-  config:
-    searchProvider: openai-responses   # the search provider id this sub-package registers on ctx.web (fixed value)
-
-- insert:
-    - id: web-search-openrouter
-      name: 'dsh-web-search-openrouter'
-      config:
-        enabled: true
-        baseURL: http://<gateway-host>:<port>/v1
-        model: <your-model-id>
-        apiKeyEnv: <KEY_ENV_NAME>
-```
-
-> ⚠️ `searchProvider` must be **exactly** `openai-responses` — the search provider id
-> `dsh-web-search-openrouter` registers on `ctx.web`. It is **not** your gateway's LLM
-> provider id (the one you put in `DSH_ACP_PROVIDER` above). The `web` plugin matches it
-> exactly, so a wrong value produces no error at config time and only fails at the first
-> search with `WEB_PROVIDER_CONFIGURED_MISSING`.
+The bridge ships no search provider and takes no position on which one you use: the
+model-facing `web_search` tool rides on the `web` seam's `searchProvider`, so mount any
+`ctx.web` provider into the profile — a package with `dsh.bundle` via
+`dsh plugin --profile acp-enhanced add <package>`, or a plain package via your user-layer
+`insert` rows (see below). Which provider exists in your dsh deployment is a profile
+concern, not a bridge one.
 
 ### Managing the profile's plugins
 
@@ -252,7 +230,7 @@ before it:
    `dsh.bundle` (like `dsh-acp-enhanced`), in array order.
 2. **Your user layer** — `~/.dsh/profiles/acp-enhanced/cordis.patch.yml`: id-targeted
    row config overrides, `disabled: true` row disables, and `insert` lists (how a
-   package without `dsh.bundle` — like `dsh-web-search-openrouter` above — gets
+   package without `dsh.bundle` — e.g. a hand-mounted custom provider — gets
    mounted).
 3. **Per-run overlays** — `dsh --profile acp-enhanced --patch extra.yml`.
 
@@ -281,9 +259,8 @@ consequences worth knowing:
 
 - **A package without `dsh.bundle` loads nothing by itself** — it installs as a plain
   dependency (with a one-time warning) and needs your own `insert` entry in the user
-  layer, like the `web-search-openrouter` row above. To change an existing row's
-  config, override it with `- id: <row>` + `config:` — patch entries replace the
-  whole row config, they do not merge.
+  layer. To change an existing row's config, override it with `- id: <row>` + `config:`
+  — patch entries replace the whole row config, they do not merge.
 
 Changes take effect in the **next** process: Zed spawns a fresh
 `dsh --profile acp-enhanced` for every agent thread, so open a new agent thread (or

@@ -187,34 +187,13 @@ node scripts/acp-client.mjs                    # 官方默认路由，无需 env
 DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # 自定义路由时再传
 ```
 
-### 可选：web_search 走同一个网关
+### Web 搜索
 
-若网关实现 OpenAI Responses 的 `web_search` 服务端工具，可把搜索也路由到网关（复用
-同一凭据）。装子包并给 profile 的 `cordis.patch.yml` 追加两段：
-
-```sh
-dsh plugin --profile acp-enhanced add dsh-web-search-openrouter
-```
-
-```yaml
-- id: web
-  config:
-    searchProvider: openai-responses   # 子包注册在 ctx.web 上的搜索 provider id（固定值）
-
-- insert:
-    - id: web-search-openrouter
-      name: 'dsh-web-search-openrouter'
-      config:
-        enabled: true
-        baseURL: http://<gateway-host>:<port>/v1
-        model: <your-model-id>
-        apiKeyEnv: <KEY_ENV_NAME>
-```
-
-> ⚠️ `searchProvider` 必须**精确等于** `openai-responses`——这是
-> `dsh-web-search-openrouter` 注册在 `ctx.web` 上的搜索 provider id，**不是**网关的
-> LLM provider id（即上面 `DSH_ACP_PROVIDER` 填的那个）。web 插件按 id 精确匹配，
-> 填错时配置期不会报错，直到首次搜索才抛 `WEB_PROVIDER_CONFIGURED_MISSING`。
+bridge 自身不携带、也不推荐任何搜索 provider：模型侧 `web_search` 工具走 `web`
+seam 的 `searchProvider`，往 profile 里挂任意 `ctx.web` provider 即可——带
+`dsh.bundle` 的包用 `dsh plugin --profile acp-enhanced add <package>` 安装，普通包
+走用户层 `insert` 挂载（见下节）。你的 dsh 部署里有哪些 provider 是 profile 层的
+事，与 bridge 无关。
 
 ### 管理 profile 的插件
 
@@ -228,8 +207,8 @@ profile 的插件树由三层组合而成，后层修补前层：
    `@deepseek-ai/dsh-base` 在前，随后是每个声明了 `dsh.bundle` 的已安装包（如
    `dsh-acp-enhanced`），按数组顺序排列。
 2. **用户层**：`~/.dsh/profiles/acp-enhanced/cordis.patch.yml`——按 id 定位的行配置
-   覆写、`disabled: true` 行禁用，以及 `insert` 挂载（无 `dsh.bundle` 的包——如上面
-   的 `dsh-web-search-openrouter`——就靠它装配）。
+   覆写、`disabled: true` 行禁用，以及 `insert` 挂载（无 `dsh.bundle` 的包——如手工
+   挂载的自写 provider——就靠它装配）。
 3. **临时覆盖**：`dsh --profile acp-enhanced --patch extra.yml`。
 
 调整插件集：
@@ -254,8 +233,8 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
   ```
 
 - **无 `dsh.bundle` 的包自身不会装配**——它只作为普通依赖安装（带一次性警告），需要
-  像上面的 `web-search-openrouter` 行那样在用户层 `insert` 挂载；要改已有行的配置，
-  用 `- id: <行>` + `config:` 覆写——patch 条目是整行替换、不做合并。
+   自己在用户层 `insert` 挂载；要改已有行的配置，用 `- id: <行>` + `config:` 覆写——
+   patch 条目是整行替换、不做合并。
 
 改动在**下一个**进程生效：Zed 为每个 agent 线程拉起一个全新的
 `dsh --profile acp-enhanced`，编辑 profile 后新开 agent 线程（或重启 Zed）即可。
