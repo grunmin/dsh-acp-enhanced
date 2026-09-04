@@ -302,7 +302,7 @@ this order:
 
 1. `$DSH_PATH` — an explicit dsh binary, or a directory whose `node_modules/.bin/dsh` holds one
 2. the repo-pinned CLI — `<repo>/node_modules/.bin/dsh` (this package's `@deepseek-ai/dsh`
-   devDependency, currently 0.1.2-alpha.2)
+   devDependency, currently 0.1.2-rc.1)
 3. global fallback — `dsh` on PATH / npx cache / npm prefix (the legacy behavior; a fresh
    clone without `pnpm install` degrades to it)
 
@@ -356,11 +356,17 @@ scripts/init-acp-home.sh              # bootstrap/refresh the isolated home (~/.
 ```
 
 DevDependency pins for the harness packages use the same ranges the pinned
-`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.2-alpha.2`), so the repo's tree and a fresh
+`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.2-rc.1`), so the repo's tree and a fresh
 CLI install resolve one coherent family — exact patch pins here mixed with the CLI's
 range-resolved closure produce a split closure (two versions of one name) that breaks
-profile boots with export-not-found errors. After changing those pins, reinstall cleanly
-(`rm -rf node_modules && pnpm install`): stale store entries poison the profile heal.
+profile boots with export-not-found errors. After changing those pins, regenerate the
+whole lockfile (`rm -rf node_modules pnpm-lock.yaml && pnpm install`): an incremental
+install both leaves stale store entries poisoning the profile heal AND retains stale
+lockfile peer resolutions — bumping 0.1.2-alpha.2 → 0.1.2-rc.1 in place left
+`dsh-session-persistence@0.1.2-alpha.3` (old-generation peers) wired into the rc.1
+packages' snapshots, which passes boot and session/new and only breaks the first turn
+with `TypeError: Cannot read properties of undefined (reading 'length')` from
+PersistenceCoordinator.
 `pnpm-workspace.yaml` approves the CLI closure's build scripts (node-pty prebuilds, koffi)
 — they are runtime requirements when the repo CLI boots the profile.
 

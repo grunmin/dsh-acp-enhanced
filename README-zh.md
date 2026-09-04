@@ -269,7 +269,7 @@ node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 与 0.1.2-alpha.2+ 两
 
 1. `$DSH_PATH` —— 显式指定的 dsh 二进制，或其 `node_modules/.bin/dsh` 内含 dsh 的目录
 2. 仓库锁定的 CLI —— `<repo>/node_modules/.bin/dsh`（本包的 `@deepseek-ai/dsh`
-   devDependency，当前 0.1.2-alpha.2）
+   devDependency，当前 0.1.2-rc.1）
 3. 全局兜底 —— PATH / npx 缓存 / npm 前缀 里的 `dsh`（旧行为；未 `pnpm install` 的全新检出退化为它）
 
 命中 (1) 或 (2) 时，profile 在**独立 home**（`DSH_ACP_HOME`，默认 `~/.dsh-acp`）下启动：dsh
@@ -318,11 +318,16 @@ scripts/init-acp-home.sh              # 引导/刷新独立 home（~/.dsh-acp）
 ```
 
 harness 包的 devDependency 与锁定的 `@deepseek-ai/dsh` CLI 声明相同的 range（如
-`^0.1.2-alpha.2`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
+`^0.1.2-rc.1`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
 锁定、与 CLI 的 range 闭包混存会得到分裂闭包（同名包两个版本），profile 启动时报
-export-not-found。改这些锁定后务必干净重装（`rm -rf node_modules && pnpm install`）：残留
-store 目录会污染 profile heal。`pnpm-workspace.yaml` 放行了 CLI 闭包的构建脚本
-（node-pty prebuild、koffi）——仓库 CLI 启动 profile 时它们就是运行时依赖。
+export-not-found。改这些锁定后务必整体重建 lockfile（`rm -rf node_modules pnpm-lock.yaml
+&& pnpm install`）：原地增量安装既会留下污染 profile heal 的残留 store 条目，还会保留
+lockfile 里的陈旧 peer 解析——从 0.1.2-alpha.2 原地升到 0.1.2-rc.1 时，rc.1 各包的
+snapshot 里仍挂着 `dsh-session-persistence@0.1.2-alpha.3`（旧代 peer），boot 与
+session/new 全部通过，直到第一个 turn 才以 `TypeError: Cannot read properties of
+undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspace.yaml` 放行
+了 CLI 闭包的构建脚本（node-pty prebuild、koffi）——仓库 CLI 启动 profile 时它们就是
+运行时依赖。
 
 ## 已知限制
 
