@@ -85,7 +85,9 @@ over the ACP wire.
   through the harness command registry — all executed **without a model turn**. Every
   user-invocable skill is advertised as a command too, so `/ask-matt`, `/code-review`,
   `/tdd`, … reach the bridge instead of being rejected by the editor, and the skill's
-  instructions are injected into the message (dsh-tool-skill-style user invocation)
+  instructions are injected into the message (dsh-tool-skill-style user invocation).
+  Images pasted next to a slash line ride along as command attachments (e.g. reference
+  screenshots for a `/goal` objective), the same way the Web composer submits them
 
 ### MCP
 

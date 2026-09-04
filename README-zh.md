@@ -72,7 +72,9 @@ ACP 线上。
   （列表以等宽代码块排版，一眼全见），其余（`/compact` `/goal` `/permission`
   `/plan`…）直通 harness 命令注册表，全部**不经过模型 turn** 即时执行。所有
   userInvocable 技能也会作为命令广播，`/ask-matt`、`/code-review`、`/tdd` 等能被
-  编辑器放行到达桥，技能正文按 dsh-tool-skill 的用户调用方式注入消息
+  编辑器放行到达桥，技能正文按 dsh-tool-skill 的用户调用方式注入消息。斜杠命令
+  旁粘贴的图片会作为命令附件随行（例如 `/goal` 目标的参考截图），与 Web 端
+  composer 的提交方式一致
 
 ### MCP
 
