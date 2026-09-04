@@ -241,14 +241,17 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
 
 ## 兼容性
 
-同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.2-alpha.2+** 的每一代 harness 上。0.1.2-alpha
-线重写了本桥消费的两个 API，桥在运行期同时吸收两代——不分叉、不加版本开关：
+同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.2-rc.1** 的每一代 harness 上。0.1.2 线重写了本桥消费的多个
+API，桥在运行期同时吸收各代——不分叉、不加版本开关：
 
 | API | ≤ 0.1.1-rc.2（旧代） | ≥ 0.1.2-alpha.2（projection 代） | 桥的做法 |
 |---|---|---|---|
 | 会话的运行中 preset | `resolveSessionPreset({header, events})` 导出 | 导出已移除；`agentPreset` session projection | 自行折叠事件日志（最后一个 `agent-preset/selected` 胜出、header 兜底）——两代语义一致 |
 | preset 解析失败 | `UnknownPresetError` / `PresetMountError` | `RemoteError`，错误码 `agent-preset/*` | `isPresetClientError`：RemoteError 按 `isDSHRemoteError` + `code` 鸭子类型识别；旧类按 `presetId` 结构识别（绝不跨副本 `instanceof`） |
 | `permissionPresets.current(x)` | `current(events)` | `current(session)`（经 `permissionState`） | `currentPermissionMode` 每次调用前探测服务实例 |
+| 会话事件日志读取 | 同步 `session.events` 数组 | `session.events` 已移除（0.1.2-rc.1）；改为 `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf`：有 `snapshotEvents()` 用之，否则用活数组 |
+| 注册表 `execute` 签名 | `execute(agent, line, signal)` | `execute(agent, line, images, signal)`（images 插在 line 与 signal 之间，0.1.1-rc.1 起） | `executeRegistryCommand` 按声明参数个数探测（`Remote` 装饰器不包裹方法） |
+| `userQuestions` 注册 | `registerProvider({ask})` | `user-questions/request` Cordis waterfall（0.1.2-alpha.2 起） | 探测服务实例；waterfall 监听只应答本桥会话、其余经 `next()` 传递 |
 
 两条不变量保证其安全性（openma 的 `deepseek-harness-acp` 适配器独立得出了同样结论）：**只值导入纯
 helper**（`createUserMessage`、`ReasoningEffortId`、`SessionId`、`defineTool`…… 外来副本功能等价）；**服务的代际问题按服务实例探测回答**——决定服务代际的是启动它的 CLI，不是本包的依赖范围。`dsh-agent-presets`

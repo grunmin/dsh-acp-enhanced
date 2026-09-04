@@ -269,14 +269,17 @@ restart Zed) after editing the profile.
 ## Compatibility
 
 One bridge binary runs against every harness generation from **0.1.0-rc.6** through
-**0.1.2-alpha.2+**. The 0.1.2-alpha line rewrote two APIs this bridge consumes, and the
-bridge absorbs both generations at runtime — no fork, no version flag:
+**0.1.2-rc.1**. The 0.1.2 line rewrote three APIs this bridge consumes, and the
+bridge absorbs every generation at runtime — no fork, no version flag:
 
 | API | ≤ 0.1.1-rc.2 (legacy) | ≥ 0.1.2-alpha.2 (projection) | Bridge behavior |
 |---|---|---|---|
 | running preset of a session | `resolveSessionPreset({header, events})` export | export removed; `agentPreset` session projection | folds the log itself (last `agent-preset/selected` wins, header fallback) — identical semantics in both |
 | preset resolution failure | `UnknownPresetError` / `PresetMountError` | `RemoteError`, codes `agent-preset/*` | `isPresetClientError`: RemoteError duck-typed by `isDSHRemoteError` + `code`, legacy classes identified structurally by `presetId` (never cross-copy `instanceof`) |
 | `permissionPresets.current(x)` | `current(events)` | `current(session)` (via `permissionState`) | `currentPermissionMode` probes the service instance per call |
+| session event log reads | synchronous `session.events` array | `session.events` removed (0.1.2-rc.1); `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf` reads `snapshotEvents()` when present, the live array otherwise |
+| registry `execute` signature | `execute(agent, line, signal)` | `execute(agent, line, images, signal)` (images between line and signal, 0.1.1-rc.1+) | `executeRegistryCommand` probes the declared arity (the `Remote` decorator never wraps the method) |
+| `userQuestions` registration | `registerProvider({ask})` | `user-questions/request` Cordis waterfall (0.1.2-alpha.2+) | probes the service instance; waterfall listener answers bridge-owned requests and delegates via `next()` |
 
 Two invariants make this safe (same conclusions the openma `deepseek-harness-acp` adapter
 reached independently): **value-import pure helpers only** (`createUserMessage`,
