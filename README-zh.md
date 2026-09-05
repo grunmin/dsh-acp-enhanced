@@ -13,7 +13,10 @@ ACP 线上。
 ### 输出与遥测
 
 - **块级流式 + 推理流式**：文本块与思考过程实时到达（`agent_message_chunk` /
-  `agent_thought_chunk`），取消/重试不留半截输出
+  `agent_thought_chunk`），取消/重试不留半截输出。在 acp-enhanced 行设置
+  `streamDeltas: true` 可切换为**逐 token 流式**——回复边生成边渲染（75ms 合并一次
+  上线），代价是中途重试无法收回已发出的半截文本，会以可见的
+  `_[stream interrupted — retrying]_` 标记隔开（默认关闭）
 - **完整遥测**：上下文用量环 + 缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 /
   轮次计数（`usage_update._meta` 携带全量明细）
 - **图片支持（多模态）**：当 dsh 组合挂载了附件存储（dsh 0.1.1-rc.2+，`dsh-base`
@@ -331,8 +334,9 @@ undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspac
 
 ## 已知限制
 
-不支持音频附件（不声明 audio 能力）、文本按块粒度流式、每会话同时一个 in-flight
-prompt。MCP 支持 stdio 与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
+不支持音频附件（不声明 audio 能力）、文本默认按块粒度流式（`streamDeltas: true`
+可切换为逐 token 流式，见「特性」）、每会话同时一个 in-flight prompt。MCP 支持 stdio
+与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
 `session/close` / `session/fork` / `session/resume` 未实现（不声明能力，合规客户端
 不会调用）；`session/delete` 因 dsh 持久化无官方删除 API，采用直接删除后端目录的方式。
 

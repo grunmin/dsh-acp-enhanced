@@ -15,7 +15,11 @@ over the ACP wire.
 
 - **Block + reasoning streaming**: text blocks and the model's thinking arrive live
   (`agent_message_chunk` / `agent_thought_chunk`); cancelled/retried attempts never leak
-  torn output
+  torn output. Set `streamDeltas: true` on the acp-enhanced row for token-level
+  streaming instead — the reply renders while the model writes it, coalesced on a 75 ms
+  timer; the trade-off is that a mid-block retry can no longer hide its abandoned
+  partial text, so a visible `_[stream interrupted — retrying]_` marker separates the
+  seam (off by default)
 - **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
   tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown)
 - **Image support (multimodal)**: when the dsh composition mounts an attachment store
@@ -388,7 +392,8 @@ PersistenceCoordinator.
 ## Known limitations
 
 Audio attachments are not supported (audio capability is not advertised), text streams at
-block granularity, one in-flight prompt per session. MCP supports stdio and streamable HTTP
+block granularity by default (`streamDeltas: true` opts into token-level streaming, see
+Features), one in-flight prompt per session. MCP supports stdio and streamable HTTP
 (legacy SSE / `acp` transports are not advertised).
 `session/close` / `session/fork` / `session/resume` are not implemented (capabilities
 undeclared, compliant clients will not call them); `session/delete` removes the
