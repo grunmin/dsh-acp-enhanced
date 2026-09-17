@@ -362,6 +362,7 @@ Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/
 ## Development
 
 ```sh
+pnpm install                              # install dev dependencies (repo-pinned CLI and test scripts)
 node scripts/compat-check.mjs         # cross-generation link check (0.1.0-rc.6 + 0.1.2-alpha.2+ scratch installs)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
