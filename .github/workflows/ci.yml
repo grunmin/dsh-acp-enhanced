@@ -25,7 +25,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Package integrity (tarball contents)
         run: npm pack --dry-run
       - name: Install dsh CLI
@@ -37,3 +37,6 @@ jobs:
       - name: Full e2e (requires DEEPSEEK_API_KEY)
         if: ${{ env.DEEPSEEK_API_KEY != '' }}
         run: node scripts/acp-client.mjs
+      - name: assistant/message fallback e2e (requires DEEPSEEK_API_KEY)
+        if: ${{ env.DEEPSEEK_API_KEY != '' }}
+        run: node scripts/acp-message-fallback-test.mjs
