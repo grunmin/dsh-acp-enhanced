@@ -357,6 +357,7 @@ Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/
 | Old threads start empty after a host upgrade | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history to the isolated home (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
 | Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model. Since 0.3.6 the bridge remembers the last effort per model (per-profile JSON): an unsupported carried effort is replaced by that model's remembered effort, else its own default, else its first offered effort — never an "unknown" dropdown, never a failed switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
 | Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
+| Turn settles with usage but **no reply text** (empty panel) | The host emitted no `assistant/chunk`, so block-level streaming had nothing to forward. The bridge now falls back to the committed `assistant/message` whenever a step streamed nothing, so this resolves itself on any host generation. On an older bridge copy, upgrade. Diagnose with `ACP_DEBUG=1`: a live turn showing `assistant/message` but no `assistant/chunk` is this case |
 | Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
 
 ## Development
@@ -371,6 +372,7 @@ node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
+node scripts/acp-message-fallback-test.mjs  # assistant/message fallback: reply arrives exactly once
 scripts/init-acp-home.sh              # bootstrap/refresh the isolated home (~/.dsh-acp)
 ```
 

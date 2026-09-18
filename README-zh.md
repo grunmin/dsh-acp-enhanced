@@ -303,6 +303,7 @@ scripts/init-acp-home.sh            # 幂等；重跑不会覆盖你的文件
 | 宿主升级后旧线程变空白 | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进独立 home（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
 | 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上。0.3.6 起本桥按模型记住上次使用的强度（随 profile 持久化）：不被新模型支持的 effort 会被该模型记忆值替换——没有记忆则回退其默认值，再无默认则取第一个可选值，既不会切换失败也不会出现 "unknown"。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
+| 轮次以 usage 结束但**面板没有回复文本**（空白） | 宿主没有发出 `assistant/chunk`，块级流式因此无内容可转发。本桥现在会在某个 step 完全没有上线文本时回退到已提交的 `assistant/message`，因此在任何宿主代次上都能自愈；会发 chunk 的宿主不受影响。若你用的是更早的桥副本，请升级。用 `ACP_DEBUG=1` 诊断：真实轮次里出现 `assistant/message` 却没有任何 `assistant/chunk` 即为此情况 |
 | 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
 
 ## 开发
@@ -317,6 +318,7 @@ node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
+node scripts/acp-message-fallback-test.mjs  # assistant/message 回退：回复恰好到达一次
 scripts/init-acp-home.sh              # 引导/刷新独立 home（~/.dsh-acp）
 ```
 
