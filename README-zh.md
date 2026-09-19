@@ -244,8 +244,8 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
 
 ## 兼容性
 
-同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.2-rc.1** 的每一代 harness 上。0.1.2 线重写了本桥消费的多个
-API，桥在运行期同时吸收各代——不分叉、不加版本开关：
+同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.6-alpha.2** 的每一代 harness 上。有两代重写了本桥消费的
+API——0.1.2 线（session projection）与 0.1.3 线（实时流式）——桥在运行期同时吸收各代：不分叉、不加版本开关：
 
 | API | ≤ 0.1.1-rc.2（旧代） | ≥ 0.1.2-alpha.2（projection 代） | 桥的做法 |
 |---|---|---|---|
@@ -255,15 +255,17 @@ API，桥在运行期同时吸收各代——不分叉、不加版本开关：
 | 会话事件日志读取 | 同步 `session.events` 数组 | `session.events` 已移除（0.1.2-rc.1）；改为 `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf`：有 `snapshotEvents()` 用之，否则用活数组 |
 | 注册表 `execute` 签名 | `execute(agent, line, signal)` | `execute(agent, line, images, signal)`（images 插在 line 与 signal 之间，0.1.1-rc.1 起） | `executeRegistryCommand` 按声明参数个数探测（`Remote` 装饰器不包裹方法） |
 | `userQuestions` 注册 | `registerProvider({ask})` | `user-questions/request` Cordis waterfall（0.1.2-alpha.2 起） | 探测服务实例；waterfall 监听只应答本桥会话、其余经 `next()` 传递 |
+| 助手实时流式 | `assistant/chunk` 会话事件（≤ 0.1.2-rc.1） | 0.1.3-alpha.2 起移除；改为 `agent/assistant-stream` 的 agent 作用域帧（`start`/`chunk`/`end`，`frame.chunk` 仍是同一套 `StreamChunk`） | 两条 seam 共用同一个 `handleChunk`；每个 step 有闩锁，两 seam 同发的宿主不会重复流式；什么都没流的宿主由已提交的 `assistant/message` 兜底 |
+| 会话持久化读取 | `list()` → `SessionHeader[]`；`load(id)` → `{meta, events}`；标题走 `readRaw(id)`（≤ 0.1.2-rc.1） | 0.1.5 换掉了整层接口：`list()` → `{header, revision, sizeBytes?}[]`、`stat(id)`、`open(id, 'read')` → handle（`header` + `read()`）；`load`/`readRaw` 已移除 | `storedSessionHeaders` 有 `entry.header` 就解包；`loadStoredSession` 走 `load` 或 handle；`readStoredTitle` 保留 raw artifact 快路径，否则用 `stat().sizeBytes` 给 handle 读取设上限；`session/delete` 对仅 JSONL 提供的 `locate` 做了保护 |
 
 两条不变量保证其安全性（openma 的 `deepseek-harness-acp` 适配器独立得出了同样结论）：**只值导入纯
 helper**（`createUserMessage`、`ReasoningEffortId`、`SessionId`、`defineTool`…… 外来副本功能等价）；**服务的代际问题按服务实例探测回答**——决定服务代际的是启动它的 CLI，不是本包的依赖范围。`dsh-agent-presets`
 按 *命名空间* 导入：0.1.2-alpha.1 删除了其命名导出，命名导入会在 ESM 链接期直接失败。
 
-从干净依赖树校验两代：
+从干净依赖树校验每一代：
 
 ```sh
-node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 与 0.1.2-alpha.2+ 两套，逐一导入本桥
+node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 四套，逐一导入本桥
 ```
 
 ### 开发检出：仓库锁定 CLI + 独立 home
@@ -272,7 +274,7 @@ node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 与 0.1.2-alpha.2+ 两
 
 1. `$DSH_PATH` —— 显式指定的 dsh 二进制，或其 `node_modules/.bin/dsh` 内含 dsh 的目录
 2. 仓库锁定的 CLI —— `<repo>/node_modules/.bin/dsh`（本包的 `@deepseek-ai/dsh`
-   devDependency，当前 0.1.2-rc.1）
+   devDependency，当前 0.1.5-rc.2）
 3. 全局兜底 —— PATH / npx 缓存 / npm 前缀 里的 `dsh`（旧行为；未 `pnpm install` 的全新检出退化为它）
 
 命中 (1) 或 (2) 时，profile 在**独立 home**（`DSH_ACP_HOME`，默认 `~/.dsh-acp`）下启动：dsh
@@ -282,8 +284,8 @@ profile 共享、内容随最后启动的 CLI 翻转——因此第二个 CLI �
 （dsh 会向每个 agent/工具进程导出它）会被识别并覆盖而非沿用；只有指向默认 home 之外的
 `DSH_HOME` 才被尊重；确要将锁定 CLI 跑在默认 home 上，请显式设 `DSH_ACP_HOME=$HOME/.dsh`。
 
-一次性引导独立 home（建**不含** `dsh-mnemon` 的 profile——它不支持 0.1.2-alpha harness——并逐字移植旧
-profile 的用户层行、迁移凭据/设置、挂 0.1.2-alpha `standard` preset 所需的
+一次性引导独立 home（建**不含** `dsh-mnemon` 的 profile——它不支持 0.1.2-alpha+ harness——并逐字移植旧
+profile 的用户层行、迁移凭据/设置、挂 0.1.2-alpha+ `standard` preset 所需的
 `subagent-model-selection-settings` 宿主服务、关闭 DeepSeek 插件清单上报）：
 
 ```sh
@@ -303,13 +305,14 @@ scripts/init-acp-home.sh            # 幂等；重跑不会覆盖你的文件
 | 宿主升级后旧线程变空白 | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进独立 home（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
 | 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上。0.3.6 起本桥按模型记住上次使用的强度（随 profile 持久化）：不被新模型支持的 effort 会被该模型记忆值替换——没有记忆则回退其默认值，再无默认则取第一个可选值，既不会切换失败也不会出现 "unknown"。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
 | 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
-| 轮次以 usage 结束但**面板没有回复文本**（空白） | 宿主没有发出 `assistant/chunk`，块级流式因此无内容可转发。本桥现在会在某个 step 完全没有上线文本时回退到已提交的 `assistant/message`，因此在任何宿主代次上都能自愈；会发 chunk 的宿主不受影响。若你用的是更早的桥副本，请升级。用 `ACP_DEBUG=1` 诊断：真实轮次里出现 `assistant/message` 却没有任何 `assistant/chunk` 即为此情况 |
+| 轮次以 usage 结束但**面板没有回复文本**（空白） | 宿主没有发出任何实时流分片，块级流式因此无内容可转发。0.8.0 起本桥会同时接管两条 seam——`assistant/chunk` 会话事件（≤ 0.1.2-rc.1）与 0.1.3-alpha.2 起取代它的 `agent/assistant-stream` 帧——并在某个 step 完全没有上线文本时回退到已提交的 `assistant/message`，因此回复不会丢失。若你用的是更早的桥副本，请升级。用 `ACP_DEBUG=1` 诊断：帧代宿主会打印 `agent/assistant-stream frame=chunk`，旧代打印 `assistant/chunk`；只有 `assistant/message` 而无上述两者即为兜底路径 |
 | 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
 
 ## 开发
 
 ```sh
-node scripts/compat-check.mjs         # 跨代链接检查（0.1.0-rc.6 + 0.1.2-alpha.2+ 临时安装）
+pnpm install                          # 安装开发依赖（仓库锁定 CLI 与测试脚本）
+node scripts/compat-check.mjs         # 跨代链接检查（0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 临时安装）
 node scripts/acp-client.mjs           # 端到端冒烟（需要 API key）
 node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan）
 node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
@@ -318,12 +321,12 @@ node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
-node scripts/acp-message-fallback-test.mjs  # assistant/message 回退：回复恰好到达一次
+node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
 scripts/init-acp-home.sh              # 引导/刷新独立 home（~/.dsh-acp）
 ```
 
 harness 包的 devDependency 与锁定的 `@deepseek-ai/dsh` CLI 声明相同的 range（如
-`^0.1.2-rc.1`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
+`^0.1.5-rc.2`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
 锁定、与 CLI 的 range 闭包混存会得到分裂闭包（同名包两个版本），profile 启动时报
 export-not-found。改这些锁定后务必整体重建 lockfile（`rm -rf node_modules pnpm-lock.yaml
 && pnpm install`）：原地增量安装既会留下污染 profile heal 的残留 store 条目，还会保留
@@ -350,7 +353,7 @@ undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspac
 
 Agent 预设接管了模型侧相关行：自带 `cordis.patch.yml` 会禁用 preset 拥有的 dsh-base
 行（tool-bash/fs/subagent/todo/web/…——与官方 dsh-web-app/tui 清单逐行一致，仅少
-`hmr`），并挂载 `agent-presets` 名册（默认 `standard`；`code`/`minimal`/`cordis`
+`hmr`；清单保持跨代通用：某一代没有的行会被 patch applier 告警并跳过），并挂载 `agent-presets` 名册（默认 `standard`；`code`/`minimal`/`cordis`
 随 dsh CLI 附带，`~/.dsh/.agent-presets` 下的自定义预设目录自动收录）。bundle 自带
 patch 会自动装配（package.json `dsh.bundle.patch`）——**不要**把它复制进 profile
 的用户层 `cordis.patch.yml`，否则 loader 在启动时因重复 entry id 拒绝装配。**升级**

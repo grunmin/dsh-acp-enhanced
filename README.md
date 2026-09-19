@@ -288,8 +288,9 @@ restart Zed) after editing the profile.
 ## Compatibility
 
 One bridge binary runs against every harness generation from **0.1.0-rc.6** through
-**0.1.2-rc.1**. The 0.1.2 line rewrote three APIs this bridge consumes, and the
-bridge absorbs every generation at runtime — no fork, no version flag:
+**0.1.6-alpha.2**. Two generations rewrote APIs this bridge consumes — the 0.1.2 line
+(session projections) and the 0.1.3 line (live streaming) — and the bridge absorbs every
+generation at runtime — no fork, no version flag:
 
 | API | ≤ 0.1.1-rc.2 (legacy) | ≥ 0.1.2-alpha.2 (projection) | Bridge behavior |
 |---|---|---|---|
@@ -299,6 +300,8 @@ bridge absorbs every generation at runtime — no fork, no version flag:
 | session event log reads | synchronous `session.events` array | `session.events` removed (0.1.2-rc.1); `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf` reads `snapshotEvents()` when present, the live array otherwise |
 | registry `execute` signature | `execute(agent, line, signal)` | `execute(agent, line, images, signal)` (images between line and signal, 0.1.1-rc.1+) | `executeRegistryCommand` probes the declared arity (the `Remote` decorator never wraps the method) |
 | `userQuestions` registration | `registerProvider({ask})` | `user-questions/request` Cordis waterfall (0.1.2-alpha.2+) | probes the service instance; waterfall listener answers bridge-owned requests and delegates via `next()` |
+| live assistant streaming | `assistant/chunk` session event (≤ 0.1.2-rc.1) | removed in 0.1.3-alpha.2; `agent/assistant-stream` agent-scoped frames (`start`/`chunk`/`end`, each `frame.chunk` the same `StreamChunk`) | both seams feed the one `handleChunk`; a per-step latch keeps a host carrying both from streaming twice, and a host that streams nothing is covered by the committed `assistant/message` fallback |
+| session persistence reads | `list()` → `SessionHeader[]`; `load(id)` → `{meta, events}`; `readRaw(id)` for stored titles (≤ 0.1.2-rc.1) | 0.1.5 replaced the surface: `list()` → `{header, revision, sizeBytes?}[]`, `stat(id)`, `open(id, 'read')` → handle (`header` + `read()`); `load`/`readRaw` removed | `storedSessionHeaders` unwraps `entry.header` when present; `loadStoredSession` uses `load` or the handle; `readStoredTitle` keeps the raw-artifact fast path and otherwise bounds the handle read with `stat().sizeBytes`; `session/delete` guards the JSONL-only `locate` |
 
 Two invariants make this safe (same conclusions the openma `deepseek-harness-acp` adapter
 reached independently): **value-import pure helpers only** (`createUserMessage`,
@@ -308,10 +311,10 @@ instance**, because the booting CLI — not this package's dependency range — 
 service generation. `dsh-agent-presets` is imported as a *namespace*: 0.1.2-alpha.1
 removed its named exports, and a named import would fail at ESM link time.
 
-Check both generations from a clean tree:
+Check every generation from a clean tree:
 
 ```sh
-node scripts/compat-check.mjs   # installs 0.1.0-rc.6 + 0.1.2-alpha.2+ sets, imports the bridge from each
+node scripts/compat-check.mjs   # installs the 0.1.0-rc.6, 0.1.2-rc.1, 0.1.5-rc.2 and 0.1.6-alpha.2 sets, imports the bridge from each
 ```
 
 ### Dev checkout: repo-pinned CLI, isolated home
@@ -321,7 +324,7 @@ this order:
 
 1. `$DSH_PATH` — an explicit dsh binary, or a directory whose `node_modules/.bin/dsh` holds one
 2. the repo-pinned CLI — `<repo>/node_modules/.bin/dsh` (this package's `@deepseek-ai/dsh`
-   devDependency, currently 0.1.2-rc.1)
+   devDependency, currently 0.1.5-rc.2)
 3. global fallback — `dsh` on PATH / npx cache / npm prefix (the legacy behavior; a fresh
    clone without `pnpm install` degrades to it)
 
@@ -357,13 +360,14 @@ Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/
 | Old threads start empty after a host upgrade | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history to the isolated home (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
 | Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model. Since 0.3.6 the bridge remembers the last effort per model (per-profile JSON): an unsupported carried effort is replaced by that model's remembered effort, else its own default, else its first offered effort — never an "unknown" dropdown, never a failed switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
 | Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
-| Turn settles with usage but **no reply text** (empty panel) | The host emitted no `assistant/chunk`, so block-level streaming had nothing to forward. The bridge now falls back to the committed `assistant/message` whenever a step streamed nothing, so this resolves itself on any host generation. On an older bridge copy, upgrade. Diagnose with `ACP_DEBUG=1`: a live turn showing `assistant/message` but no `assistant/chunk` is this case |
+| Turn settles with usage but **no reply text** (empty panel) | The host emitted no live stream chunks, so block-level streaming had nothing to forward. From 0.8.0 the bridge claims both live seams — the `assistant/chunk` session event (≤ 0.1.2-rc.1) and the `agent/assistant-stream` frames that replaced it in 0.1.3-alpha.2 — and falls back to the committed `assistant/message` whenever a step streamed nothing, so the reply is never lost. On an older bridge copy, upgrade. Diagnose with `ACP_DEBUG=1`: frames hosts log `agent/assistant-stream frame=chunk`, legacy hosts log `assistant/chunk`; an `assistant/message` turn with neither is the fallback path |
 | Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
 
 ## Development
 
 ```sh
-node scripts/compat-check.mjs         # cross-generation link check (0.1.0-rc.6 + 0.1.2-alpha.2+ scratch installs)
+pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
+node scripts/compat-check.mjs         # cross-generation link check (0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 scratch installs)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
 node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
@@ -372,12 +376,12 @@ node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
-node scripts/acp-message-fallback-test.mjs  # assistant/message fallback: reply arrives exactly once
+node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once
 scripts/init-acp-home.sh              # bootstrap/refresh the isolated home (~/.dsh-acp)
 ```
 
 DevDependency pins for the harness packages use the same ranges the pinned
-`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.2-rc.1`), so the repo's tree and a fresh
+`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.5-rc.2`), so the repo's tree and a fresh
 CLI install resolve one coherent family — exact patch pins here mixed with the CLI's
 range-resolved closure produce a split closure (two versions of one name) that breaks
 profile boots with export-not-found errors. After changing those pins, regenerate the
@@ -411,7 +415,9 @@ True multi-root write enforcement belongs in dsh core (`dsh-sandbox-policy` /
 
 Agent presets take over the model-facing rows: the shipped `cordis.patch.yml` disables
 the dsh-base rows a preset owns (tool-bash/fs/subagent/todo/web/… — exactly the official
-dsh-web-app/tui list minus `hmr`) and mounts the `agent-presets` roster (`standard`
+dsh-web-app/tui list minus `hmr`, kept version-agnostic across generations: a row a given
+generation does not ship is warned and skipped by the patch applier) and mounts the
+`agent-presets` roster (`standard`
 default; `code`/`minimal`/`cordis` ship with the dsh CLI, your own preset dirs under
 `~/.dsh/.agent-presets` are picked up automatically). The bundle's own patch applies
 automatically (package.json `dsh.bundle.patch`) — do **not** copy it into the profile's
