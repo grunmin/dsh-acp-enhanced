@@ -11,9 +11,9 @@
  * (pinned to the newest generation) can never mask a link-time break against
  * an older one.
  *
- * The service-side generation differences (permissionPresets.current argument
- * shape, preset-error identification) are probed at runtime by the bridge
- * itself and covered by scripts/acp-client.mjs e2e runs against live hosts.
+ * The service-side generation differences are gone: the bridge targets one
+ * declared API line (floor 0.1.5-rc.2) and does not probe service shapes at
+ * runtime. Behaviour on a live host is covered by the e2e runs in scripts/.
  *
  * Usage: node scripts/compat-check.mjs [--registry <npm-registry>]
  *   --registry defaults to the public npm registry: prerelease harness
@@ -37,56 +37,12 @@ const bridgeDeps = {
   zod: '^4.4.3',
 }
 
-// The supported API generations. "legacy" is the exact pinned set the
-// 0.1.x-era devDependencies used; "projection" is the last generation that
-// still persists `assistant/chunk` (0.1.2-rc.1); "frames" and "framesNext" are
-// the two live lines that replaced it with the `agent/assistant-stream`
-// dispatch (0.1.3-alpha.2 removed it). Each mirrors the repo devDependency
-// ranges (the same ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh
-// resolution matches what a real profile boot heals.
+// The supported API generations, both on the `agent/assistant-stream` frames
+// line (0.1.3-alpha.2+): "frames" is the pinned rc line, "framesNext" the alpha
+// line that supersedes it. Each mirrors the repo devDependency ranges (the same
+// ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh resolution
+// matches what a real profile boot heals.
 const GENERATIONS = {
-  legacy: {
-    label: '0.1.0-rc.6 (legacy API)',
-    deps: {
-      '@deepseek-ai/cordis': '4.0.1-rc.4',
-      '@deepseek-ai/cordis-plugin-include': '1.0.6-rc.4',
-      '@deepseek-ai/cordis-plugin-loader': '1.0.2-rc.4',
-      '@deepseek-ai/dsh-agent': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-agent-instructions': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-agent-presets': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-invariants': '0.1.0-rc.8',
-      '@deepseek-ai/dsh-llm': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-mcp-client': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-permission-presets': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-session': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-session-query': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-skill': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-timeout': '0.1.0-rc.8',
-      '@deepseek-ai/dsh-tools': '0.1.0-rc.6',
-      '@deepseek-ai/dsh-user-approval': '0.1.0-rc.6',
-    },
-  },
-  projection: {
-    label: '0.1.2-rc.1 (session-projection API, last assistant/chunk generation)',
-    deps: {
-      '@deepseek-ai/cordis': '^4.0.2',
-      '@deepseek-ai/cordis-plugin-include': '^1.0.7',
-      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
-      '@deepseek-ai/dsh': '0.1.2-rc.1',
-      '@deepseek-ai/dsh-agent': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-agent-instructions': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-agent-presets': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-invariants': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-llm': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-mcp-client': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-permission-presets': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-session': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-session-query': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-skill': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-tools': '^0.1.2-rc.1',
-      '@deepseek-ai/dsh-user-approval': '^0.1.2-alpha.2',
-    },
-  },
   frames: {
     label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
     deps: {
@@ -142,10 +98,9 @@ for (const [name, generation] of Object.entries(GENERATIONS)) {
       dependencies: { ...generation.deps, ...bridgeDeps },
     }, null, 2))
     // Scratch installs run under pnpm (the repo's own manager): its lenient
-    // auto-install-peers matches how the real legacy hosts resolved the same
-    // trees — npm's strict resolver walks the 0.1.0-rc family's peer chain
-    // (dsh-brand@rc.8 → dsh-invariants@^rc.8, dsh-system-prompt@rc.8 →
-    // dsh-llm@^rc.8, …) into unresolvable conflicts against exact pins.
+    // auto-install-peers resolves the prerelease peer chains the same way a
+    // real profile boot does, where npm's strict resolver walks them into
+    // unresolvable conflicts against exact pins.
     const installed = spawnSync('pnpm', ['install', '--silent', `--registry=${registry}`], { cwd: scratch, encoding: 'utf8' })
     if (installed.status !== 0) {
       console.log(`FAIL  [${name}] npm install of the generation failed: ${(installed.stderr || '').split('\n').slice(-3).join(' ')}`)

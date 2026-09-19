@@ -70,6 +70,12 @@ try {
       prompt: [{ type: 'text', text: '只回复三个字：你好呀' }],
     })
     check('part1 prompt settles', p1.stopReason === 'end_turn', p1.stopReason)
+    // Switch the permission preset through the ACP mode surface. The declared
+    // public write path (`permissionPresets.set()`) appends the selection and
+    // writes BOTH knobs — sandbox mode and approval policy — so the fold on a
+    // later resume must land back on this exact preset (asserted in part 2).
+    await c.setSessionMode({ sessionId, modeId: 'danger-full-access' })
+    check('part1 session/set_mode switches the permission preset', true)
     writeFileSync(sidFile, sessionId, 'utf8')
     child.kill('SIGTERM')
     await new Promise((r) => setTimeout(r, 800)) // let persistence flush
@@ -87,13 +93,25 @@ try {
   })
   check('agent advertises loadSession', init.agentCapabilities?.loadSession === true,
     JSON.stringify(init.agentCapabilities?.loadSession))
-  check('agent advertises session/list + session/delete',
+  check('agent advertises session/list + session/close, but not session/delete',
     init.agentCapabilities?.sessionCapabilities?.list !== undefined
-      && init.agentCapabilities?.sessionCapabilities?.delete !== undefined,
+      && init.agentCapabilities?.sessionCapabilities?.close !== undefined
+      && init.agentCapabilities?.sessionCapabilities?.delete === undefined,
     JSON.stringify(init.agentCapabilities?.sessionCapabilities))
   const loaded = await c2.loadSession({ sessionId: sid, cwd: process.cwd(), mcpServers: [] })
   check('session/load returns config', Array.isArray(loaded.configOptions) && loaded.configOptions.length >= 2,
     JSON.stringify((loaded.configOptions ?? []).map((o) => o.id)))
+  // `permission.current(session)` folds the persisted knob events: resolving to
+  // the preset (rather than `custom`) proves the mode switch wrote a durable
+  // sandbox mode AND approval policy, not just one of them.
+  check('the permission preset survives a resume (both knobs are durable)',
+    loaded.modes?.currentModeId === 'danger-full-access',
+    `currentModeId=${JSON.stringify(loaded.modes?.currentModeId)}`)
+  const reloadedPreset = (loaded.configOptions ?? []).find((o) => o.id === 'permission_preset')
+  check('the config option agrees with the resumed mode',
+    String(reloadedPreset?.currentValue) === 'danger-full-access',
+    JSON.stringify(reloadedPreset?.currentValue))
+  await c2.setSessionMode({ sessionId: sid, modeId: 'workspace-write' })
   // The loaded session already has history, so agent_preset must be locked:
   // only the running preset is advertised (ACP has no per-option disabled
   // state; the editor shows the current mode without offering a switch).
@@ -117,16 +135,19 @@ try {
   })
   check('resumed agent accepts a follow-up', p2.stopReason === 'end_turn', p2.stopReason)
 
-  // ── session/list + session/delete ─────────────────────────────────────────
+  // ── session/list ──────────────────────────────────────────────────────────
+  // `session/delete` is gone (no public persistence delete exists), so the
+  // artifact stays: a list after the old delete point must be unchanged.
   const listed = await c2.listSessions({ cwd: process.cwd() })
   const entry = (listed.sessions ?? []).find((s) => s.sessionId === sid)
   check('session/list returns the persisted session', entry !== undefined,
     JSON.stringify((listed.sessions ?? []).map((s) => ({ id: s.sessionId, title: s.title, cwd: s.cwd }))))
   check('listed session carries a title and cwd', typeof entry?.title === 'string' && entry.title.length > 0 && entry.cwd === process.cwd(),
     JSON.stringify(entry))
-  await c2.deleteSession({ sessionId: sid })
   const after = await c2.listSessions({ cwd: process.cwd() })
-  check('session/delete removes it from the list', !(after.sessions ?? []).some((s) => s.sessionId === sid),
+  check('session/list is unchanged without session/delete',
+    (after.sessions ?? []).length === (listed.sessions ?? []).length
+      && (after.sessions ?? []).some((s) => s.sessionId === sid),
     JSON.stringify((after.sessions ?? []).map((s) => s.sessionId)))
 
   child.kill('SIGTERM')

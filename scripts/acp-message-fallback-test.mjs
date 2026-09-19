@@ -2,19 +2,17 @@
 /**
  * End-to-end check of live streaming and the `assistant/message` fallback.
  *
- * The bridge has three tiers for delivering assistant text:
- *   1. the `assistant/chunk` session event (harness ≤ 0.1.2-rc.1),
- *   2. the `agent/assistant-stream` frames event that replaced it in
- *      0.1.3-alpha.2,
- *   3. the committed `assistant/message` fallback, which fires only when a step
+ * The bridge has two tiers for delivering assistant text:
+ *   1. the `agent/assistant-stream` frames event — the only live seam,
+ *   2. the committed `assistant/message` fallback, which fires only when a step
  *      put no text on the wire.
  *
  * This test drives a real session twice over:
- *   - it asserts a live seam actually fired (tier 1 or 2) by reading the
- *     `ACP_DEBUG=1` stderr markers, so a silent regression to the fallback
- *     fails instead of quietly passing, and
+ *   - it asserts the live seam actually fired by reading the `ACP_DEBUG=1`
+ *     stderr markers, so a silent regression to the fallback fails instead of
+ *     quietly passing, and
  *   - it asserts a two-marker reply arrives exactly once, so the fallback can
- *     never duplicate a reply a live seam already delivered.
+ *     never duplicate a reply the live seam already delivered.
  *
  * Spawns `dsh --profile acp-enhanced` (override with argv: `node
  * scripts/acp-message-fallback-test.mjs <command> <arg...>`), so run it wherever
@@ -40,7 +38,7 @@ const child = spawn(cmd, args, {
 })
 const pending = new Map()
 const chunks = []
-const seams = { frames: 0, legacy: 0 }
+let framesSeam = 0
 let seq = 0
 let failed = 0
 
@@ -96,12 +94,10 @@ readline.createInterface({ input: child.stdout }).on('line', (line) => {
   }
 })
 
-// Live-seam markers, emitted by the bridge under ACP_DEBUG. The frames seam
-// logs `agent/assistant-stream frame=chunk …`; the legacy seam logs
-// `assistant/chunk turn=… step=… chunkType=…`.
+// Live-seam marker, emitted by the bridge under ACP_DEBUG:
+// `agent/assistant-stream frame=chunk …`.
 readline.createInterface({ input: child.stderr }).on('line', (line) => {
-  if (line.includes('agent/assistant-stream frame=chunk')) seams.frames += 1
-  else if (/\[acp-debug\] assistant\/chunk turn=/.test(line)) seams.legacy += 1
+  if (line.includes('agent/assistant-stream frame=chunk')) framesSeam += 1
 })
 
 const initialized = await send('initialize', { protocolVersion: 1, clientCapabilities: {} })
@@ -137,8 +133,8 @@ const second = count(SECOND)
 
 console.log(`CHUNKS: ${chunks.length}`)
 console.log(`TEXT: ${JSON.stringify(text)}`)
-check('a live streaming seam fired (frames or legacy)', seams.frames + seams.legacy > 0,
-  `frames=${seams.frames}, legacy=${seams.legacy}`)
+check('the live streaming seam fired (agent/assistant-stream frames)', framesSeam > 0,
+  `frames=${framesSeam}`)
 check('the reply reached the client', first > 0 && second > 0, `text=${JSON.stringify(text.slice(0, 120))}`)
 check('the reply reached it exactly once', first === 1 && second === 1,
   `${FIRST}×${first}, ${SECOND}×${second}`)

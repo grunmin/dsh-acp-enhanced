@@ -21,8 +21,8 @@
   ],
   "services": {
     "approval": {
-      "declaredIn": "docs/capability-seams.md: ctx.approval (owner packages/interaction/user-approval); class declares setPolicy(agent, policy)",
-      "members": ["setPolicy"]
+      "declaredIn": "docs/capability-seams.md: ctx.approval (owner packages/interaction/user-approval); required as a mount dependency through `export const inject`, and its `approval/request` waterfall is answered by this plugin (the policy knob is written by permissionPresets.set, not here)",
+      "members": []
     },
     "systemPrompt": {
       "declaredIn": "docs/capability-seams.md: ctx.systemPrompt (owner packages/core/system-prompt)",
@@ -62,21 +62,19 @@
     },
     "agentPresets": {
       "declaredIn": "docs/capability-seams.md: ctx.agentPresets (owner packages/preset/agent-presets); abstract class members in lib/types/index.d.ts",
-      "members": ["list", "resolve", "resolveMountable", "mount", "recompose", "composedPreset", "composeFrom", "read", "readDocument", "copy", "remove", "select"]
+      "members": ["list", "resolve", "resolveMountable", "mount", "recompose", "composedPreset", "composeFrom", "read", "readDocument", "copy", "remove", "select", "serviceFor"]
     },
     "sessionPersistence": {
       "declaredIn": "docs/capability-seams.md: ctx.sessionPersistence (owner packages/session/session-persistence); abstract class declares create/open/flush/stat/list",
       "members": ["create", "open", "flush", "stat", "list"]
     },
     "attachments": {
-      "declaredIn": "docs/capability-seams.md: ctx.attachments 'Durable binary attachment storage' (owner packages/attachment/attachment)",
-      "members": ["validateImage", "saveImage", "imageLimits"],
-      "note": "Accessed indirectly through codec.attachmentIngestOf; member names still pending an upstream citation check."
+      "declaredIn": "docs/capability-seams.md: ctx.attachments 'Durable binary attachment storage' (owner packages/attachment/attachment); AttachmentStore declares abstract readonly imageLimits and abstract validateImage/saveImage (lib/types/index.d.ts, verified against 0.1.5-rc.2)",
+      "members": ["validateImage", "saveImage", "imageLimits"]
     },
     "agentDefaultModel": {
-      "declaredIn": "docs/capability-seams.md: ctx.agentDefaultModel (owner packages/core/agent-default-model)",
-      "members": ["saveSelection", "currentSelection"],
-      "note": "Member names still pending an upstream citation check."
+      "declaredIn": "docs/capability-seams.md: ctx.agentDefaultModel (owner packages/core/agent-default-model); AgentDefaultModelConfig declares currentSelection()/saveSelection() (lib/types/index.d.ts, verified against 0.1.5-rc.2)",
+      "members": ["saveSelection", "currentSelection"]
     }
   },
   "events": {

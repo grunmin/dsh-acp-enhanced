@@ -111,6 +111,20 @@ async function main() {
     check('config options advertised', ['model', 'permission_preset'].every((id) => ids.includes(id)), ids.join(','))
     check('permission modes advertised', Array.isArray(created.modes?.availableModes) && created.modes.availableModes.length >= 3)
 
+    // The ACP mode list and the `permission_preset` config option are two views
+    // of one table — both are built from `permissionPresets.optionOf()` — so
+    // they must agree option-for-option on id/value, label and description.
+    // Drift here is how the mode UI and the dropdown start disagreeing.
+    const presetOption = (created.configOptions ?? []).find((o) => o.id === 'permission_preset')
+    const advertisedModes = created.modes?.availableModes ?? []
+    const presetShape = (entries) => entries
+      .map((entry) => [String(entry.id ?? entry.value ?? ''), entry.name, entry.description ?? null])
+      .sort((a, b) => a[0].localeCompare(b[0]))
+    check('permission_preset options match the advertised modes',
+      presetOption !== undefined && advertisedModes.length === presetOption.options.length
+        && JSON.stringify(presetShape(advertisedModes)) === JSON.stringify(presetShape(presetOption.options)),
+      `modes=${JSON.stringify(presetShape(advertisedModes))} options=${JSON.stringify(presetShape(presetOption?.options ?? []))}`)
+
     // ── multi-root workspaces: capability + lifecycle params ─────────────────
     // Zed renders "This agent doesn't currently support multi-root workspaces"
     // unless initialize advertises sessionCapabilities.additionalDirectories;
