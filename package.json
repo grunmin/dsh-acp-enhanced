@@ -30,7 +30,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "test:client": "node scripts/acp-client.mjs"
+    "test:client": "node scripts/acp-client.mjs",
+    "check:surface": "node scripts/api-surface-check.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",

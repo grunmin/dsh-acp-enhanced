@@ -1,0 +1,110 @@
+{
+  "$comment": [
+    "Public harness surface consumed by this bridge.",
+    "",
+    "Rule: a bridge may only touch entries listed here, and every entry must cite",
+    "the upstream declaration that makes it public. The authoritative sources are",
+    "the generated catalogs in deepseek-ai/deepseek-harness:",
+    "  - docs/capability-seams.md          (declared services, owner + consumers)",
+    "  - docs/event-producer-consumer.md   (declared events, Declared in file:line)",
+    "  - docs/architecture.md              ('Events are the extension points')",
+    "Anything that cannot be pointed at in those catalogs is private and must not",
+    "be used. `internal/*` events are always forbidden.",
+    "",
+    "scripts/api-surface-check.mjs enforces this list against lib/."
+  ],
+  "supportedDshFloor": "0.1.5-rc.2",
+  "frameworkNote": "Cordis framework built-ins (cordis / cordis-plugin-loader), not harness surface.",
+  "framework": [
+    "get", "on", "waterfall", "serial", "bail", "emit", "logger", "effect",
+    "provide", "inject", "set", "isolate", "reflect", "loader", "plugin"
+  ],
+  "services": {
+    "approval": {
+      "declaredIn": "docs/capability-seams.md: ctx.approval (owner packages/interaction/user-approval); class declares setPolicy(agent, policy)",
+      "members": ["setPolicy"]
+    },
+    "systemPrompt": {
+      "declaredIn": "docs/capability-seams.md: ctx.systemPrompt (owner packages/core/system-prompt)",
+      "members": []
+    },
+    "llm": {
+      "declaredIn": "docs/capability-seams.md: ctx.llm 'LLM adapter registry' (owner packages/llm/llm)",
+      "members": ["listProviders", "listModels", "resolveModelInfo", "resolveCallConfig"]
+    },
+    "skills": {
+      "declaredIn": "docs/capability-seams.md: ctx.skills (owner packages/skill/skill)",
+      "members": ["list", "get"]
+    },
+    "agents": {
+      "declaredIn": "docs/capability-seams.md: ctx.agents (owner packages/core/agent)",
+      "members": ["create", "resume", "get"]
+    },
+    "commands": {
+      "declaredIn": "docs/capability-seams.md: ctx.commands (owner packages/interaction/commands)",
+      "members": ["execute", "list"]
+    },
+    "tools": {
+      "declaredIn": "docs/capability-seams.md: ctx.tools (owner packages/core/tools); ToolRuntime declares register",
+      "members": ["register"]
+    },
+    "subagents": {
+      "declaredIn": "docs/capability-seams.md: ctx.subagents (owner packages/subagent/subagent)",
+      "members": ["drainContinuableDescendants"]
+    },
+    "userQuestions": {
+      "declaredIn": "docs/capability-seams.md: ctx.userQuestions (owner packages/interaction/user-questions); answer via the declared user-questions/request waterfall",
+      "members": ["ask"]
+    },
+    "permissionPresets": {
+      "declaredIn": "docs/capability-seams.md: ctx.permissionPresets (owner packages/interaction/permission-presets); abstract class members in lib/types/index.d.ts",
+      "members": ["current", "names", "defaultPreset", "selectFor", "resolve", "optionOf", "set"]
+    },
+    "agentPresets": {
+      "declaredIn": "docs/capability-seams.md: ctx.agentPresets (owner packages/preset/agent-presets); abstract class members in lib/types/index.d.ts",
+      "members": ["list", "resolve", "resolveMountable", "mount", "recompose", "composedPreset", "composeFrom", "read", "readDocument", "copy", "remove", "select"]
+    },
+    "sessionPersistence": {
+      "declaredIn": "docs/capability-seams.md: ctx.sessionPersistence (owner packages/session/session-persistence); abstract class declares create/open/flush/stat/list",
+      "members": ["create", "open", "flush", "stat", "list"]
+    },
+    "attachments": {
+      "declaredIn": "docs/capability-seams.md: ctx.attachments 'Durable binary attachment storage' (owner packages/attachment/attachment)",
+      "members": ["validateImage", "saveImage", "imageLimits"],
+      "note": "Accessed indirectly through codec.attachmentIngestOf; member names still pending an upstream citation check."
+    },
+    "agentDefaultModel": {
+      "declaredIn": "docs/capability-seams.md: ctx.agentDefaultModel (owner packages/core/agent-default-model)",
+      "members": ["saveSelection", "currentSelection"],
+      "note": "Member names still pending an upstream citation check."
+    }
+  },
+  "events": {
+    "session/event": "packages/core/session/src/index.ts:72 (emit; durable session firehose)",
+    "agent/assistant-stream": "packages/core/agent/src/runtime-types.ts:363 (emit; docs/architecture.md:109 lists it as a live extension point)",
+    "approval/request": "packages/interaction/user-approval/src/types.ts:85 (waterfall)",
+    "llm/adapters-updated": "packages/llm/llm/src/types.ts:23 (emit)",
+    "user-questions/request": "packages/interaction/user-questions/src/types.ts:88 (waterfall)"
+  },
+  "imports": {
+    "@deepseek-ai/dsh-llm": ["createUserMessage", "errorChain", "ReasoningEffortId"],
+    "@deepseek-ai/dsh-agent": ["installModelSelection"],
+    "@deepseek-ai/dsh-skill": ["renderSkillContent"],
+    "@deepseek-ai/dsh-tools": ["defineTool"],
+    "@deepseek-ai/dsh-session": ["SessionId"],
+    "@deepseek-ai/schemastery": ["default"]
+  },
+  "sessionMethods": ["snapshotEvents", "ownEvents", "eventAt", "deriveMessages"],
+  "denylist": [
+    "assistant/chunk",
+    "persistence.load",
+    "readRaw",
+    "persistence.locate",
+    "permission.apply",
+    "permission.presets",
+    "permissionState",
+    "registerProvider",
+    "session.events",
+    "internal/"
+  ]
+}
