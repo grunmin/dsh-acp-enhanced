@@ -35,10 +35,41 @@
 set -eu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-CLI="${REPO_DIR}/node_modules/.bin/dsh"
-if [ ! -x "${CLI}" ]; then
-  echo "init-acp-home: repo-pinned dsh CLI missing (${CLI}); run 'pnpm install' in ${REPO_DIR} first" >&2
-  exit 1
+
+# Resolve the dsh CLI the same way the launcher and the doctor do, so this
+# script also works for an npm-installed copy (which has no devDependencies and
+# therefore no repo-local .bin/dsh).
+CLI=""
+if [ -n "${DSH_PATH:-}" ]; then
+  if [ -x "${DSH_PATH}" ]; then
+    CLI="${DSH_PATH}"
+  elif [ -x "${DSH_PATH}/node_modules/.bin/dsh" ]; then
+    CLI="${DSH_PATH}/node_modules/.bin/dsh"
+  else
+    echo "init-acp-home: DSH_PATH is set but holds no dsh ('${DSH_PATH}')" >&2
+    exit 127
+  fi
+elif [ -x "${REPO_DIR}/node_modules/.bin/dsh" ]; then
+  # Repo-pinned CLI (a dev checkout).
+  CLI="${REPO_DIR}/node_modules/.bin/dsh"
+else
+  CLI="$(command -v dsh 2>/dev/null || true)"
+  if [ -z "${CLI}" ]; then
+    for candidate in \
+      "$HOME"/.npm/_npx/*/node_modules/.bin/dsh \
+      "$(npm prefix -g 2>/dev/null)/bin/dsh" \
+      /opt/homebrew/bin/dsh \
+      /usr/local/bin/dsh; do
+      if [ -x "${candidate}" ]; then
+        CLI="${candidate}"
+        break
+      fi
+    done
+  fi
+fi
+if [ -z "${CLI}" ]; then
+  echo "init-acp-home: cannot locate the dsh CLI; install it (npm install -g @deepseek-ai/dsh@<version>) or set DSH_PATH" >&2
+  exit 127
 fi
 
 NEW_HOME="${DSH_ACP_HOME:-$HOME/.dsh-acp}"
@@ -68,8 +99,8 @@ fi
 # disabled plugins, and this profile must not carry dsh-mnemon (its
 # dsh-client-runtime import is gone in the 0.1.2-alpha harness).
 BAD_BUNDLES="$(python3 -c "
-import json
-p = json.load(open('${PROFILE_DIR}/package.json'))
+import json, sys
+p = json.load(open(sys.argv[1]))
 bundles = p.get('dsh', {}).get('profile', {}).get('bundles', [])
 need = {'@deepseek-ai/dsh-base', 'dsh-acp-enhanced'}
 problems = []
@@ -80,7 +111,7 @@ forbidden = set(bundles) & {'dsh-mnemon'}
 if forbidden:
     problems.append('FORBIDDEN:' + ','.join(sorted(forbidden)))
 print(' '.join(problems), end='')
-")"
+" "${PROFILE_DIR}/package.json")"
 if [ -n "${BAD_BUNDLES}" ]; then
   echo "init-acp-home: unexpected bundle set (${BAD_BUNDLES}); fix ${PROFILE_DIR}/package.json by hand" >&2
   exit 1
@@ -91,12 +122,12 @@ echo "==> profile bundles verified (base + acp-enhanced, no dsh-mnemon)"
 # rejected entry, so any extra bundle is a boot-wide risk. Report them instead
 # of removing them — the operator may have accepted the trade deliberately.
 EXTRA_BUNDLES="$(python3 -c "
-import json
-p = json.load(open('${PROFILE_DIR}/package.json'))
+import json, sys
+p = json.load(open(sys.argv[1]))
 bundles = p.get('dsh', {}).get('profile', {}).get('bundles', [])
 minimal = {'@deepseek-ai/dsh-base', 'dsh-acp-enhanced'}
 print(','.join(sorted(set(bundles) - minimal)), end='')
-")"
+" "${PROFILE_DIR}/package.json")"
 if [ -n "${EXTRA_BUNDLES}" ]; then
   echo "==> note: extra bundle(s) in this profile: ${EXTRA_BUNDLES}" >&2
   echo "    Every extra bundle sits on the boot path of every ACP thread; a single failing" >&2
@@ -299,6 +330,6 @@ echo "    (Zed: agent_servers.env), and keep agent_servers running"
 echo "    ${REPO_DIR}/scripts/dsh-acp-zed.sh"
 echo "  - For the shared default home instead, skip this script and run:"
 echo "      dsh plugin --profile acp-enhanced add link:${REPO_DIR}"
-echo "  - Smoke test: DSH_HOME=${NEW_HOME} node scripts/acp-client.mjs scripts/dsh-acp-zed.sh"
+echo "  - Verify that home: DSH_HOME=${NEW_HOME} node ${REPO_DIR}/scripts/acp-doctor.mjs"
 echo "  - Optional, to make old Zed threads resumable on the new host: rsync -a --ignore-existing ${OLD_HOME}/sessions/ ${NEW_HOME}/sessions/"
 echo "    (old-home sessions live on; both generations use \$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd and the new host reads old logs)"
