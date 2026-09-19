@@ -19,8 +19,8 @@ ACP 线上。
   `_[stream interrupted — retrying]_` 标记隔开（默认关闭）
 - **完整遥测**：上下文用量环 + 缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 /
   轮次计数（`usage_update._meta` 携带全量明细）
-- **图片支持（多模态）**：当 dsh 组合挂载了附件存储（dsh 0.1.1-rc.2+，`dsh-base`
-  默认装配 `dsh-attachment-local`）时，会声明 `promptCapabilities.image` 并把粘贴/
+- **图片支持（多模态）**：当 dsh 组合挂载了附件存储（`dsh-base` 默认装配
+  `dsh-attachment-local`）时，会声明 `promptCapabilities.image` 并把粘贴/
   上传的图片持久化进 harness 附件存储——支持视觉的模型（如 `deepseek-v4-flash-vision-exp`）
   可按线序原生读取，图文交替不乱序。旧版栈（无附件存储）自动降级：不声明 image、
   收到图片 prompt 明确报错。
@@ -62,7 +62,8 @@ ACP 线上。
 ### 会话
 
 - **恢复与归档**：`session/load` 恢复历史线程（完整回放）；`session/list` 列出线程
-  归档（带标题、按更新时间排序）；标题实时推送。`session/delete` **有意不广播**——
+  归档（带标题、按更新时间排序）；`session/close` 释放内存中的会话记录，之后的
+  `session/load` 会从持久化日志完整恢复；标题实时推送。`session/delete` **有意不广播**——
   harness 未声明公开的持久化删除接口（见「兼容性」）
 - **多根工作区**：`sessionCapabilities.additionalDirectories` 已声明，Zed 不再提示
   "This agent doesn't currently support multi-root workspaces"，而是把所有工作区根
@@ -190,7 +191,8 @@ Zed 会热重载设置。打开 **AI Agent 面板**（`Cmd+Shift+A`）→ agent 
 本地验证（无需 Zed）：
 
 ```sh
-node scripts/acp-client.mjs                    # 官方默认路由，无需 env；期望 ALL CHECKS PASSED
+node <pkg>/scripts/acp-doctor.mjs              # bundle + 版本、peer 范围，并真实启动一次
+node scripts/acp-client.mjs                    # 仅限仓库检出：完整 ACP 端到端，期望 ALL CHECKS PASSED
 DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # 自定义路由时再传
 ```
 
@@ -286,17 +288,17 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 ## 兼容性
 
 同一个桥只对应**一条** harness API 线：**dsh ≥ 0.1.5-rc.2**（peer 范围
-`^0.1.5-rc.1 || ^0.1.6-alpha.1`）。该范围内的**两条线**每次 CI 都会做真实启动验证——握手、
+`^0.1.5-rc.2 || ^0.1.6-alpha.1`）。该范围内的**两条线**每次 CI 都会做真实启动验证——握手、
 profile settle 与真实 `session/new`——另有跨代链接检查。桥只消费 harness **已声明**的表面：
 `docs/capability-seams.md` 里的服务、`docs/event-producer-consumer.md` 里的事件、以及已发布包的导出。
-`scripts/api-surface-check.mjs` 会对其他一切报错（`npm run check:surface`，CI 的阻塞步骤），
+`scripts/api-surface-check.mjs` 会对其他一切报错（CI 的阻塞步骤），
 运行期也不再有任何代际探测——没有版本开关，没有鸭子类型探测服务形状。
 
 ### 支持策略
 
 | 桥版本 | 支持的 dsh 线 | 变化 |
 |---|---|---|
-| **0.9.x** | `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1` | 只消费已声明表面；下限 0.1.5-rc.2；移除 `session/delete` |
+| **0.9.x** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | 只消费已声明表面；下限 0.1.5-rc.2；移除 `session/delete` |
 | 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1`（未发布） | 0.1.3+ 实时 seam；0.1.5 持久化 handle API |
 | 0.7.x 及更早 | ≤ 0.1.2-rc.1 | 运行期同时探测两代 |
 
@@ -367,8 +369,8 @@ dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
 当前解析结果随时可查：
 
 ```sh
-node scripts/compat-check.mjs   # 分别安装 0.1.5-rc.2 与 0.1.6-alpha.2 两套，逐一导入本桥
-node scripts/acp-doctor.mjs     # CLI 与闭包版本、bundle 列表，并真实启动一次
+node scripts/compat-check.mjs   # 仅限仓库检出：分别安装 0.1.5-rc.2 与 0.1.6-alpha.2 两套，逐一导入本桥
+node <pkg>/scripts/acp-doctor.mjs   # CLI 与闭包版本、bundle 列表，并真实启动一次（随包发布）
 ```
 
 ### 开发检出：仓库锁定 CLI + 共享 home
@@ -440,7 +442,8 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 ```sh
 pnpm install                          # 安装开发依赖（仓库锁定 CLI 与测试脚本）
 node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.5-rc.2 / 0.1.6-alpha.2 临时安装）
-npm run check:surface                 # 公开表面守卫：不得使用未声明的 harness API（CI 阻塞步骤）
+node scripts/api-surface-check.mjs    # 公开表面守卫：不得使用未声明的 harness API（CI 阻塞步骤）
+node scripts/pack-check.mjs           # 包完整性：入口文件、权限位、所引用文件是否都随包发布（CI 阻塞步骤）
 node scripts/acp-client.mjs           # 端到端冒烟（需要 API key）
 node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan）
 node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
@@ -473,7 +476,7 @@ undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspac
 不支持音频附件（不声明 audio 能力）、文本默认按块粒度流式（`streamDeltas: true`
 可切换为逐 token 流式，见「特性」）、每会话同时一个 in-flight prompt。MCP 支持 stdio
 与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
-`session/close` / `session/fork` / `session/resume` 未实现（不声明能力，合规客户端
+`session/fork` / `session/resume` 未实现（不声明能力，合规客户端
 不会调用）。`session/delete` 同样不广播：harness 未声明公开的持久化删除接口，因此本桥
 永不删除已持久化的会话（见「兼容性」）。
 

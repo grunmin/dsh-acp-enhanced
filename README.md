@@ -23,7 +23,7 @@ over the ACP wire.
 - **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
   tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown)
 - **Image support (multimodal)**: when the dsh composition mounts an attachment store
-  (dsh 0.1.1-rc.2+ with `dsh-attachment-local`, the default in dsh-base), `promptCapabilities.image`
+  (`dsh-attachment-local`, mounted by default in `dsh-base`), `promptCapabilities.image`
   is advertised and pasted/uploaded images are ingested into the harness's durable attachment
   store — a vision-capable model (e.g. `deepseek-v4-flash-vision-exp`) reads them natively,
   in wire order with surrounding text. Older stacks (no attachment store) automatically
@@ -72,9 +72,10 @@ over the ACP wire.
 ### Sessions
 
 - **Resume & archive**: `session/load` restores past threads (full replay); `session/list`
-  lists the thread archive (titled, sorted by last activity); live title updates.
-  `session/delete` is deliberately **not** advertised — the harness declares no public
-  persistence delete (see [Compatibility](#compatibility))
+  lists the thread archive (titled, sorted by last activity); `session/close` drops the
+  in-memory record so a later `session/load` resumes from the persisted log; live title
+  updates. `session/delete` is deliberately **not** advertised — the harness declares no
+  public persistence delete (see [Compatibility](#compatibility))
 - **Multi-root workspaces**: `sessionCapabilities.additionalDirectories` is advertised,
   so Zed no longer shows "this agent doesn't currently support multi-root workspaces"
   and instead passes every workspace root on `session/new` / `session/load`. All roots
@@ -226,7 +227,8 @@ sessions.
 Verify locally (no Zed needed):
 
 ```sh
-node scripts/acp-client.mjs                    # official default route, no env; expect ALL CHECKS PASSED
+node <pkg>/scripts/acp-doctor.mjs              # bundles + versions, the peer range, and one real boot
+node scripts/acp-client.mjs                    # dev checkout only: full ACP e2e, expect ALL CHECKS PASSED
 DSH_ACP_PROVIDER=... DSH_ACP_MODEL=... node scripts/acp-client.mjs   # only for a custom route
 ```
 
@@ -335,19 +337,18 @@ dsh --profile acp-enhanced --dump-config   # where each row comes from
 ## Compatibility
 
 One bridge binary, one harness API line: **dsh ≥ 0.1.5-rc.2** (peer range
-`^0.1.5-rc.1 || ^0.1.6-alpha.1`). Both lines in that range are **boot-verified** —
+`^0.1.5-rc.2 || ^0.1.6-alpha.1`). Both lines in that range are **boot-verified** —
 handshake, profile settle and a real `session/new` — on every CI run, plus a cross-generation
 link check. The bridge consumes only the harness's **declared** surface: services in
 `docs/capability-seams.md`, events in `docs/event-producer-consumer.md`, published package
-exports. `scripts/api-surface-check.mjs` fails on anything else (`npm run check:surface`, a
-blocking CI step), and there is no runtime generation probing left — no version flags, no
-duck-typed service shapes.
+exports. `scripts/api-surface-check.mjs` fails on anything else (a blocking CI step), and
+there is no runtime generation probing left — no version flags, no duck-typed service shapes.
 
 ### Support policy
 
 | Bridge | Supported dsh lines | What changed |
 |---|---|---|
-| **0.9.x** | `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
+| **0.9.x** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
 | 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1` (unreleased) | 0.1.3+ live-stream seam; 0.1.5 persistence handle API |
 | 0.7.x and older | ≤ 0.1.2-rc.1 | runtime probing of both generations |
 
@@ -425,8 +426,8 @@ under that home, and dsh heals it to whichever CLI booted last. So:
 Current resolutions are always visible:
 
 ```sh
-node scripts/compat-check.mjs   # installs the 0.1.5-rc.2 and 0.1.6-alpha.2 sets and imports the bridge from each
-node scripts/acp-doctor.mjs     # CLI + closure versions, bundles, and one real boot
+node scripts/compat-check.mjs   # dev checkout: installs the 0.1.5-rc.2 and 0.1.6-alpha.2 sets and imports the bridge from each
+node <pkg>/scripts/acp-doctor.mjs   # CLI + closure versions, bundles, and one real boot (shipped)
 ```
 
 ### Dev checkout: repo-pinned CLI, shared home
@@ -505,7 +506,8 @@ the ACP wire), so the agent log already carries the layer and the fix.
 ```sh
 pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
 node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 scratch installs)
-npm run check:surface                 # public-surface guard: no undeclared harness API (blocking CI step)
+node scripts/api-surface-check.mjs    # public-surface guard: no undeclared harness API (blocking CI step)
+node scripts/pack-check.mjs           # package integrity: entry points, modes, shipped-file references (blocking CI step)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
 node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
@@ -542,7 +544,7 @@ Audio attachments are not supported (audio capability is not advertised), text s
 block granularity by default (`streamDeltas: true` opts into token-level streaming, see
 Features), one in-flight prompt per session. MCP supports stdio and streamable HTTP
 (legacy SSE / `acp` transports are not advertised).
-`session/close` / `session/fork` / `session/resume` are not implemented (capabilities
+`session/fork` / `session/resume` are not implemented (capabilities
 undeclared, compliant clients will not call them). `session/delete` is not advertised
 either: the harness declares no public persistence delete, so persisted sessions are
 never removed by the bridge (see [Compatibility](#compatibility)).
