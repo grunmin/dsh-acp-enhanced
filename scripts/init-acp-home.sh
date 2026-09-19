@@ -1,13 +1,23 @@
 #!/bin/bash
-# One-shot bootstrap for the isolated dsh home used by the acp-enhanced
+# OPTIONAL bootstrap for an isolated dsh home carrying the acp-enhanced
 # profile (see docs/plans/2026-09-01-dsh-0.1.2-alpha.2-migration.md).
 #
-# The launcher (scripts/dsh-acp-zed.sh) boots this profile with the
-# repo-pinned @deepseek-ai/dsh CLI under its own DSH_HOME (default
-# ~/.dsh-acp), because $DSH_HOME/profiles/node_modules is shared by every
-# profile under that home and flips to the closure of whichever CLI booted
-# last — a second CLI generation must not share it with the machine's default
-# home. This script creates that home once:
+# The launcher (scripts/dsh-acp-zed.sh) does NOT switch homes. It boots the
+# profile inside the dsh home it was started with (${DSH_HOME:-$HOME/.dsh}), so
+# the ACP profile is normally just another profile in the default home, sharing
+# credentials, settings, sessions and presets with `dsh web`. The usual way to
+# create it is a single command:
+#
+#   dsh plugin --profile acp-enhanced add link:<this repo>
+#
+# This script remains for the isolated-home setup: it builds a self-contained
+# home (default ~/.dsh-acp, override with DSH_ACP_HOME) whose
+# $DSH_HOME/profiles/node_modules closure is not shared with the default home.
+# To use that home you must point the launcher at it yourself — export
+# DSH_HOME=<that home> (Zed: `agent_servers.env`); the launcher honors an
+# inherited DSH_HOME verbatim.
+#
+# What it creates (re-running is safe: existing files are never clobbered):
 #
 #   1. profile 'acp-enhanced' via `dsh plugin add` (bundles:
 #      @deepseek-ai/dsh-base + dsh-acp-enhanced — deliberately WITHOUT
@@ -21,8 +31,6 @@
 #   4. credentials + settings from the default home (never overwritten)
 #   5. the agent-preset user root, home-layer patch, and the bridge's effort
 #      memory, when the default home has them
-#
-# Re-running is safe: existing files are never clobbered.
 set -eu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -37,6 +45,12 @@ OLD_HOME="${DSH_HOME:-$HOME/.dsh}"
 PROFILE_DIR="${NEW_HOME}/profiles/acp-enhanced"
 mkdir -p "${NEW_HOME}"
 export DSH_HOME="${NEW_HOME}"
+
+if [ "${NEW_HOME}" = "${OLD_HOME}" ]; then
+  SAME_HOME=1
+else
+  SAME_HOME=0
+fi
 
 echo "==> isolated home: ${NEW_HOME}"
 echo "==> default home (source of migrations): ${OLD_HOME}"
@@ -96,7 +110,7 @@ else
   # repo. Without an old profile, a commented web-search template is left to
   # fill in (README: web search section).
   OLD_USER_PATCH="${OLD_HOME}/profiles/acp-enhanced/cordis.patch.yml"
-  if [ -f "${OLD_USER_PATCH}" ]; then
+  if [ "${SAME_HOME}" = 0 ] && [ -f "${OLD_USER_PATCH}" ]; then
     cp "${OLD_USER_PATCH}" "${USER_PATCH}"
     perl -i -pe '$_ = "" if $_ =~ /^\[\]\s*$/ && !$done++' "${USER_PATCH}"
     echo "==> ported the old profile's user-layer patch verbatim"
@@ -148,34 +162,40 @@ PATCH
   echo "==> user-layer patch ready: ${USER_PATCH}"
 fi
 
-# 4. Credentials + settings from the default home (never overwritten).
-for f in .credentials.yaml settings.yaml; do
-  if [ -f "${OLD_HOME}/${f}" ] && [ ! -f "${NEW_HOME}/${f}" ]; then
-    cp "${OLD_HOME}/${f}" "${NEW_HOME}/${f}"
-    chmod 600 "${NEW_HOME}/${f}" 2>/dev/null || true
-    echo "==> copied ${f} from the default home (mode 600)"
+# 4. Credentials + settings + authored state, migrated from the default home
+# (never overwritten). Skipped when the target IS the default home: there is
+# nothing to migrate and a self-symlink would be wrong.
+if [ "${SAME_HOME}" = 1 ]; then
+  echo "==> target home is the default home; no migration needed"
+else
+  for f in .credentials.yaml settings.yaml; do
+    if [ -f "${OLD_HOME}/${f}" ] && [ ! -f "${NEW_HOME}/${f}" ]; then
+      cp "${OLD_HOME}/${f}" "${NEW_HOME}/${f}"
+      chmod 600 "${NEW_HOME}/${f}" 2>/dev/null || true
+      echo "==> copied ${f} from the default home (mode 600)"
+    fi
+  done
+
+  # 5. Agent-preset user root: share the default home's (symlink, not copy, so
+  # authored presets stay in one place).
+  if [ -d "${OLD_HOME}/.agent-presets" ] && [ ! -e "${NEW_HOME}/.agent-presets" ]; then
+    ln -s "${OLD_HOME}/.agent-presets" "${NEW_HOME}/.agent-presets"
+    echo "==> linked the agent-preset user root"
   fi
-done
 
-# 5. Agent-preset user root: share the default home's (symlink, not copy, so
-# authored presets stay in one place).
-if [ -d "${OLD_HOME}/.agent-presets" ] && [ ! -e "${NEW_HOME}/.agent-presets" ]; then
-  ln -s "${OLD_HOME}/.agent-presets" "${NEW_HOME}/.agent-presets"
-  echo "==> linked the agent-preset user root"
-fi
+  # Home-layer patch from the default home, when present.
+  if [ -f "${OLD_HOME}/cordis.patch.yml" ] && [ ! -f "${NEW_HOME}/cordis.patch.yml" ]; then
+    cp "${OLD_HOME}/cordis.patch.yml" "${NEW_HOME}/cordis.patch.yml"
+    echo "==> ported the home-layer patch"
+  fi
 
-# Home-layer patch from the default home, when present.
-if [ -f "${OLD_HOME}/cordis.patch.yml" ] && [ ! -f "${NEW_HOME}/cordis.patch.yml" ]; then
-  cp "${OLD_HOME}/cordis.patch.yml" "${NEW_HOME}/cordis.patch.yml"
-  echo "==> ported the home-layer patch"
-fi
-
-# The bridge's per-model effort memory lives next to the profile's own files.
-if [ -f "${OLD_HOME}/profiles/acp-enhanced/dsh-acp-enhanced-effort-memory.json" ] \
-  && [ ! -f "${PROFILE_DIR}/dsh-acp-enhanced-effort-memory.json" ]; then
-  cp "${OLD_HOME}/profiles/acp-enhanced/dsh-acp-enhanced-effort-memory.json" \
-    "${PROFILE_DIR}/dsh-acp-enhanced-effort-memory.json"
-  echo "==> migrated the effort memory"
+  # The bridge's per-model effort memory lives next to the profile's own files.
+  if [ -f "${OLD_HOME}/profiles/acp-enhanced/dsh-acp-enhanced-effort-memory.json" ] \
+    && [ ! -f "${PROFILE_DIR}/dsh-acp-enhanced-effort-memory.json" ]; then
+    cp "${OLD_HOME}/profiles/acp-enhanced/dsh-acp-enhanced-effort-memory.json" \
+      "${PROFILE_DIR}/dsh-acp-enhanced-effort-memory.json"
+    echo "==> migrated the effort memory"
+  fi
 fi
 
 # Session history: both harness generations persist under
@@ -193,7 +213,12 @@ fi
 
 echo
 echo "Bootstrap complete. Next:"
-echo "  - Zed: keep agent_servers pointing at ${REPO_DIR}/scripts/dsh-acp-zed.sh (it now resolves the repo-pinned CLI and exports DSH_HOME=${NEW_HOME} automatically)."
+echo "  - This is an ISOLATED home: the launcher never moves to it by itself."
+echo "    Point the launcher at it by exporting DSH_HOME=${NEW_HOME}"
+echo "    (Zed: agent_servers.env), and keep agent_servers running"
+echo "    ${REPO_DIR}/scripts/dsh-acp-zed.sh"
+echo "  - For the shared default home instead, skip this script and run:"
+echo "      dsh plugin --profile acp-enhanced add link:${REPO_DIR}"
 echo "  - Smoke test: DSH_HOME=${NEW_HOME} node scripts/acp-client.mjs scripts/dsh-acp-zed.sh"
 echo "  - Optional, to make old Zed threads resumable on the new host: rsync -a --ignore-existing ${OLD_HOME}/sessions/ ${NEW_HOME}/sessions/"
 echo "    (old-home sessions live on; both generations use \$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd and the new host reads old logs)"

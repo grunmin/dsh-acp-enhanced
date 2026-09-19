@@ -31,6 +31,7 @@
   ],
   "scripts": {
     "test:client": "node scripts/acp-client.mjs",
+    "test:launcher": "node scripts/acp-launcher-test.mjs",
     "check:surface": "node scripts/api-surface-check.mjs"
   },
   "dependencies": {
