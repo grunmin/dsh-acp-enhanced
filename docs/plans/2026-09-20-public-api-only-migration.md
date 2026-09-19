@@ -2,7 +2,8 @@
 
 - Date: 2026-09-20
 - Branch: **`feat/public-api-only`** (stacked on `feat/dsh-0.1.3-plus-support`)
-- Status: **P0–P4 done** — executed 2026-09-20; see §11 for the execution record
+- Status: **P0–P4 done** — executed 2026-09-20; §11 is the execution record,
+  §12 the environment migration that followed
 - Supersedes nothing; layers on top of the 0.1.3+ adaptation
 
 > **Handoff note for a fresh session.** Read this file top to bottom first. It is
@@ -206,6 +207,10 @@ Keep that path and its arguments working unchanged.
 
 ## 8. Machine state / environment gotchas
 
+> **Superseded 2026-09-19 (session 3): the environment was migrated, see §12.**
+> The original state is kept below because the failure modes it describes are
+> what the launcher/doctor now translate.
+
 - The maintainer's live setup: Zed →
   `~/.dsh/profiles/acp-enhanced/node_modules/dsh-acp-enhanced/scripts/dsh-acp-zed.sh`;
   that installed bridge copy is **0.7.0** (from `file:dsh-acp-enhanced-0.7.0.tgz`,
@@ -250,6 +255,19 @@ Keep that path and its arguments working unchanged.
   row in 0.1.2-rc.1, so disabling it would delete `/goal` on ≤0.1.1 hosts.
 - The parent branch `feat/dsh-0.1.3-plus-support` remains the escape hatch for
   users who cannot move off ≤0.1.2-rc.1.
+- **A fresh one-command install cannot boot a `standard` session on 0.1.5**
+  (found in session 3). The shipped `standard` preset mounts `tool-subagent`
+  with `modelSelectionSettings: true`, which needs `subagent-model-selection-settings`
+  in the Host scope; `dsh-base` does not carry it, and the bridge's bundle patch
+  cannot add it because **a duplicate loader entry id is a hard boot failure**
+  (`TypeError: duplicate loader entry id: subagent-model-selection-settings`) —
+  which is exactly what every profile seeded by `init-acp-home.sh` /
+  `host-service-row.mjs` already has. Verified failure on a bare profile:
+  `session/new` → `agent-presets: preset "standard" failed to mount: … tool-subagent:
+  modelSelectionSettings requires …`. A fix must ship the row *and* stop the
+  tooling from seeding a second copy (plus a migration note for existing
+  profiles); the bundle patch is the natural home now that the module exists on
+  every supported CLI. Out of scope for the environment migration in §12.
 
 ## 11. Execution record (2026-09-20, session 2)
 
@@ -316,3 +334,51 @@ points:
 - §8's environment note is otherwise unchanged: the installed bridge copy in the
   maintainer's profile is still 0.7.0 from a tarball, so the live setup is
   unaffected until it is reinstalled.
+
+## 12. Environment migration (2026-09-19, session 3 — at the maintainer's request)
+
+§8's state is superseded. What was done, in order:
+
+1. **Global CLI upgraded**: `npm install -g @deepseek-ai/dsh@0.1.5-rc.2`
+   (`/opt/homebrew/lib/node_modules`, the install prefix `npm prefix -g` reports).
+   npm 11 blocked the closure's install scripts; checked that the artifacts those
+   scripts produce are already shipped — `node-pty/prebuilds/darwin-arm64/pty.node`
+   and an executable `spawn-helper` (all `ensure-spawn-helper.mjs` does is
+   `chmod 0755`), plus koffi's `@koromix/koffi-darwin-arm64/koffi.node`.
+2. **The live profile relinked to this checkout**:
+   `dsh plugin --profile acp-enhanced add link:/Users/runmin/dev/dsh-acp-enhanced`
+   → `node_modules/dsh-acp-enhanced` is now a symlink to the repo (bridge 0.9.0
+   instead of the 0.7.0 tarball), so the running bridge is the working tree.
+3. **The required host row added to the profile's user layer**, because step 1
+   makes it mandatory (see §10's last item for why the bundle patch cannot carry
+   it). `~/.dsh/profiles/acp-enhanced/cordis.patch.yml` now ends with the
+   `subagent-model-selection-settings` insert, commented with the reason.
+4. **`dsh-free-search` kept at 0.4.24** — the maintainer's rule was "delete it if
+   it is incompatible", and it is not: a scratch profile with
+   `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` + `dsh-free-search` boots clean
+   under 0.1.5-rc.2 with both 0.4.24 and the latest 0.4.32, mounts
+   `web-search-free`, and patches the host `web` row to `searchProvider: ddg`
+   (`dsh --profile … --dump-config`). It stays a boot-path bundle, so the profile
+   is deliberately not minimal (the doctor flags it).
+5. **Zed pointed at the repo launcher**:
+   `~/.config/zed/settings.json` → `agent_servers."dsh-acp-enhanced".args` is now
+   `/Users/runmin/dev/dsh-acp-enhanced/scripts/dsh-acp-zed.sh` (backup:
+   `settings.json.bak-20260919-154923`). The `env` block (provider/model/proxy)
+   is untouched.
+
+Verification on the real home (not a scratch one):
+
+| Check | Result |
+| --- | --- |
+| `node scripts/acp-doctor.mjs` | `READY` — bridge 0.9.0, base 0.1.5-rc.2, free-search 0.4.24, closure healed to `@deepseek-ai/dsh-agent 0.1.5-rc.2` |
+| live `initialize` through the launcher | `deepseek-harness-acp-enhanced 0.9.0` |
+| live `session/new` (standard preset) | OK — modes + `permission_preset` (danger-full-access) + `agent_preset` = `standard` (options: standard, ptc, minimal, cordis, router-standard) |
+| live `session/list` | 481 real sessions read through the 0.1.5 handle API, 198 with titles — the persistence rewrite holds over the existing archive |
+| `dsh --profile web --dump-config` | composes cleanly on 0.1.5-rc.2 (613 rows, no errors), so `dsh web` survives the closure heal |
+
+Consequence to remember: the closure flipped from 0.1.1-rc.2 to 0.1.5-rc.2 under
+the ACP threads that were already running (spawned by the old global CLI), which
+is precisely the drift the launcher warns about. **Existing Zed threads must be
+restarted** (close/reopen the thread, or restart Zed) to run on the new stack;
+the freshly created session used for the check above was deleted by hand, since
+`session/delete` no longer exists.
