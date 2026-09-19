@@ -16,8 +16,8 @@ jobs:
         node-version: [22, 24]
         # Both lines the peer range claims: the pin (0.1.5-rc.2) and the 0.1.6
         # alpha line. Every job below boots a real profile, so a green run is
-        # boot-time verification of the support claim — the old matrix only
-        # link-checked 0.1.6-alpha.2 through scripts/compat-check.mjs.
+        # boot-time verification of the support claim — the old matrix had no
+        # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
         # `.github/workflows/canary.yml` watches the line after these.
         dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2']
     steps:
@@ -31,7 +31,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
       - name: Launcher contract (no implicit home switch)
@@ -41,17 +41,41 @@ jobs:
           node scripts/replay-order-test.mjs
           node scripts/codec-image-test.mjs
           node scripts/terminal-codec-test.mjs
-      - name: Package integrity (tarball contents)
-        run: npm pack --dry-run
+      - name: Package integrity (entry points, shipped references, modes)
+        run: node scripts/pack-check.mjs
       - name: Install dsh CLI (${{ matrix.dsh-version }})
         run: npm install -g @deepseek-ai/dsh@${{ matrix.dsh-version }}
       - name: Keyless boot smoke (initialize + session/new)
         run: node scripts/acp-smoke-keyless.mjs
       - name: MCP mount smoke (no model calls)
         run: node scripts/acp-mcp-test.mjs
+
+      # ── the model-backed legs ────────────────────────────────────────────
+      # They are the only coverage for reply delivery, the assistant/message
+      # fallback and replay ordering, and they need a real model. Their profile
+      # is created here: `acp-client.mjs` and friends default to
+      # `--profile acp-enhanced`, which nothing else in this job makes.
+      - name: e2e profile (linked to this checkout)
+        if: ${{ env.DEEPSEEK_API_KEY != '' }}
+        run: dsh plugin --profile acp-enhanced add "link:$PWD"
       - name: Full e2e (requires DEEPSEEK_API_KEY)
         if: ${{ env.DEEPSEEK_API_KEY != '' }}
         run: node scripts/acp-client.mjs
       - name: assistant/message fallback e2e (requires DEEPSEEK_API_KEY)
         if: ${{ env.DEEPSEEK_API_KEY != '' }}
         run: node scripts/acp-message-fallback-test.mjs
+      - name: resume replay-order e2e (requires DEEPSEEK_API_KEY)
+        if: ${{ env.DEEPSEEK_API_KEY != '' }}
+        run: node scripts/acp-resume-test.mjs
+      # A skipped leg must not look like a passed one: with no secret the run
+      # above is offline-only, and that has to be visible in the log.
+      - name: E2E legs skipped (no DEEPSEEK_API_KEY)
+        if: ${{ env.DEEPSEEK_API_KEY == '' }}
+        run: |
+          echo "::warning::DEEPSEEK_API_KEY is not set — the model-backed e2e legs (reply delivery, assistant/message fallback, replay order) did not run."
+          {
+            echo "### Model-backed e2e legs did not run"
+            echo ""
+            echo "No \`DEEPSEEK_API_KEY\` secret is configured, so this run only proves the"
+            echo "offline guards, the package integrity and the keyless boots."
+          } >> "$GITHUB_STEP_SUMMARY"

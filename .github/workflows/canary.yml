@@ -48,9 +48,13 @@ jobs:
       - name: MCP mount smoke (no model calls)
         run: node scripts/acp-mcp-test.mjs
       - name: doctor on the canary line
+        # DSH_PATH is load-bearing here: without it the doctor prefers
+        # <repo>/node_modules/.bin/dsh (the pinned devDependency) over PATH, and
+        # it spawns the launcher, which resolves the CLI the same way — the step
+        # would report on the pinned line while calling itself a canary.
         run: |
           dsh plugin --profile canary add "link:$PWD"
-          node scripts/acp-doctor.mjs --profile canary
+          DSH_PATH="$(command -v dsh)" node scripts/acp-doctor.mjs --profile canary
       - name: assistant/message fallback e2e (requires DEEPSEEK_API_KEY)
         if: ${{ env.DEEPSEEK_API_KEY != '' }}
         run: |
