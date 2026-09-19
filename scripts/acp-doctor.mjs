@@ -120,6 +120,17 @@ if (bundles.some((name) => !MINIMAL_BUNDLES.includes(name))) {
  */
 function classify(stderr) {
   const firstOf = (pattern) => stderr.match(pattern)?.[1]
+  // A duplicate loader entry id outranks everything: it is a composition
+  // conflict (the same row shipped by two layers), not a generation problem,
+  // and its fix is a specific line to delete.
+  const duplicate = firstOf(/duplicate loader entry id: *([^\s,)]+)/)
+  if (duplicate !== undefined) {
+    return {
+      layer: 'mount-time',
+      subject: `duplicate loader entry id: ${duplicate}`,
+      fix: `two layers ship the row "${duplicate}". If it is a host row the bridge's bundle patch provides (e.g. subagent-model-selection-settings), delete it from the user layer — ${join(profileDir, 'cordis.patch.yml')} — or re-run ${repoDir}/scripts/init-acp-home.sh, which retires the legacy copy.`,
+    }
+  }
   if (/does not provide an export named|SyntaxError: The requested module/.test(stderr)) {
     const moduleName = firstOf(/module '([^']+)'/)
     return {

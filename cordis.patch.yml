@@ -140,6 +140,24 @@
   disabled: true
 
 - insert:
+    # Host-owned opt-in the shipped `standard` preset samples when it mounts
+    # tool-subagent with `modelSelectionSettings: true`. dsh-base carries no such
+    # row, so an app bundle has to supply it — `@deepseek-ai/dsh-web-app` inserts
+    # this exact row for the web profile. Without it every `session/new` on the
+    # `standard` preset fails with `tool-subagent: modelSelectionSettings
+    # requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the
+    # Host scope`, so this row is part of a bootable ACP composition, not a
+    # nicety.
+    #
+    # It has the canonical id, which means a profile's user layer must NOT also
+    # seed it: `cordis-plugin-loader` rejects a repeated id outright
+    # (`duplicate loader entry id: …`), aborting the whole plugin tree. Older
+    # revisions of this repo handed the row to the user layer instead (the
+    # module did not exist on ≤ 0.1.1 hosts); `scripts/init-acp-home.sh` removes
+    # that legacy copy, and the doctor names it if one is left behind.
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
     # The agent-preset roster: `ctx.agentPresets`, the service the bridge
     # composes every session's model-facing world from. No `roots` here — the
     # dsh CLI's profile-boot overlays its shipped `config/agent-presets/`

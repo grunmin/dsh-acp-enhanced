@@ -339,8 +339,9 @@ DSH_ACP_HOME=~/.dsh-acp scripts/init-acp-home.sh   # 可选、幂等：创建并
 
 独立 home 是明确的可选项，不是默认值：profile 必须存在于启动器实际使用的 home 里，否则启动器
 会以 127 退出，并打印出创建它的那条 `dsh plugin … add link:` 命令。`init-acp-home.sh` 会逐字移植旧
-profile 的用户层行、复制凭据/设置、补上 `standard` preset 所需的
-`subagent-model-selection-settings` 宿主服务，并关闭 DeepSeek 插件清单上报。
+profile 的用户层行、复制凭据/设置、关闭 DeepSeek 插件清单上报，并从用户层清掉遗留的
+`subagent-model-selection-settings` 行——该宿主行现在由 bridge 的 bundle patch 插入，再留一份会以
+`duplicate loader entry id` 中止启动。
 
 两种 home 都把会话持久化在 `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`；默认不在 home 之间
 拷贝任何东西，因为默认 home 的目录里还有全部 web profile 会话。迁移既有环境时请加
@@ -362,7 +363,7 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | 层 | `dsh` stderr 里的特征 | 含义 | 修法 |
 |---|---|---|---|
 | **link-time** | `does not provide an export named …`、`SyntaxError: The requested module …` | 启动的 CLI 闭包无法满足本桥的某个 import | 见 doctor 的 `LAYER link-time`：对齐代次——重启该 home 下其他 dsh 进程（共享闭包会愈合到最后启动的那个 CLI），或用 `DSH_PATH=<匹配的 dsh>` 锁定本启动器 |
-| **mount-time** | `failed to apply loader entry …`、`… requires … in the Host scope` | loader 拒绝了某一个条目并向上抛出，整棵插件树因此中止 | doctor 会打印 `SUBJECT <条目> (<模块>)`——补装缺失模块、在用户层禁用该行（`- id: <条目>` + `disabled: true`），或把 `dsh.profile.bundles` 收敛为 `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` |
+| **mount-time** | `failed to apply loader entry …`、`… requires … in the Host scope`、`duplicate loader entry id: …` | loader 拒绝了某一个条目并向上抛出，整棵插件树因此中止 | doctor 会打印 `SUBJECT <条目> (<模块>)`——补装缺失模块、在用户层禁用该行（`- id: <条目>` + `disabled: true`），或把 `dsh.profile.bundles` 收敛为 `@deepseek-ai/dsh-base` + `dsh-acp-enhanced`；若为重复 id，请从用户层删除该行（它归 bundle patch 所有） |
 | **run-time** | 握手成功后出现 `… is not a function` | 桥调用到了该 CLI 代次不提供的 harness 服务方法 | `npm install -g @deepseek-ai/dsh@<支持范围内的版本>`（见[兼容性](#兼容性)） |
 
 启动器在 Zed 启动过程中会把同样三类特征翻译到 **stderr**（stdout 是 ACP 协议线），
@@ -374,7 +375,8 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | `exec: dsh: not found`（status 127） | `which dsh` | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh），或安装 CLI |
 | `no API key for provider route "xxx"` | `ls -l $DSH_HOME/.credentials.yaml` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
 | `SyntaxError: … 'PresetMountError'` | agent 日志里的桥版本 | 你在 0.1.5 宿主上跑 0.9.0 之前的桥副本——升级本包 |
-| `modelSelectionSettings requires … in the Host scope` | `grep subagent-model-selection-settings $DSH_HOME/profiles/acp-enhanced/cordis.patch.yml` | 补上 insert 行（模板见 `scripts/init-acp-home.sh`） |
+| `modelSelectionSettings requires … in the Host scope` | `dsh --profile acp-enhanced --dump-config \| grep subagent-model-selection` | `standard` preset 需要的宿主行缺失——该行由 bridge 的 bundle patch 提供，请重装/升级 bridge（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced`），并检查用户层没有把它 `disabled: true` |
+| `duplicate loader entry id: <行>` | doctor 会打印 `LAYER mount-time` 与该 id | 两层都插了同一行。请从 profile 用户层（`$DSH_HOME/profiles/acp-enhanced/cordis.patch.yml`）删掉它——这类宿主行归 bundle patch 所有；`scripts/init-acp-home.sh` 会自动清掉遗留的 `subagent-model-selection-settings` 副本 |
 | 宿主升级后旧线程变空白 | `ls $DSH_HOME/sessions` | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进来（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
 | 无法切换模型 | `ACP_DEBUG=1 dsh --profile acp-enhanced`，然后尝试切换 | 携带的 `reasoning_effort` 在目标模型上不受支持：本桥按模型记住上次使用的强度（随 profile 持久化），会回退到该模型默认值而不是让切换失败。另检查路由是否真实——幽灵 provider 会被过滤，只广播 `config.provider` 的模型 |
 | 上下文用量不显示 | 线程里执行 `/status` | 选到了不可路由的"幽灵 provider"；确认 profile 的 provider 指向真实路由 |

@@ -25,9 +25,10 @@
 #   2. bundle-set verification (the profile must never carry dsh-mnemon)
 #   3. the user-layer cordis.patch.yml: your old profile's user rows ported
 #      verbatim (web-search routing and friends — machine-specific values
-#      never shipped with this repo), plus the subagent-model-selection host
-#      service the 0.1.2-alpha standard preset requires and the DeepSeek
-#      plugin-inventory reporter disabled
+#      never shipped with this repo), plus the DeepSeek plugin-inventory
+#      reporter disabled; a legacy `subagent-model-selection-settings` row is
+#      retired from this layer, because the bridge's bundle patch inserts that
+#      host row itself and a duplicate id aborts the boot
 #   4. credentials + settings from the default home (never overwritten)
 #   5. the agent-preset user root, home-layer patch, and the bridge's effort
 #      memory, when the default home has them
@@ -110,12 +111,11 @@ fi
 USER_PATCH="${PROFILE_DIR}/cordis.patch.yml"
 touch "${USER_PATCH}"
 if grep -q '^- ' "${USER_PATCH}"; then
-  echo "==> user-layer patch already present (left untouched)"
-  for needle in subagent-model-selection-settings 'plugin-package-inventory-deepseek'; do
-    if ! grep -q "${needle}" "${USER_PATCH}"; then
-      echo "    note: '${needle}' is not in your patch layer; if this home boots a 0.1.2-alpha CLI, add it (see the bootstrap template in scripts/init-acp-home.sh)" >&2
-    fi
-  done
+  echo "==> user-layer patch already present"
+  if ! grep -q plugin-package-inventory-deepseek "${USER_PATCH}"; then
+    echo "    note: 'plugin-package-inventory-deepseek' is not in your patch layer (optional:" >&2
+    echo "    it disables the plugin-inventory report to official DeepSeek requests)" >&2
+  fi
 else
   # The profile template ships `[]` as its only effective content; strip that
   # line before appending real entries, or the file would hold a scalar array
@@ -153,19 +153,12 @@ PLACEHOLDER
   # Machine-independent bootstrap rows, appended only when absent (a row
   # already present in ported content must not be duplicated — the loader
   # rejects duplicate entry ids at boot).
-  if ! grep -q subagent-model-selection-settings "${USER_PATCH}"; then
-    cat >> "${USER_PATCH}" <<'PATCH'
-
-# 0.1.2-alpha harness presets mount tool-subagent with modelSelectionSettings
-# enabled, which requires the subagentModelSelection settings service in the
-# host scope. dsh-web-app provides it for the web profile; a dsh-base-only
-# composition must mount it itself. (Pre-0.1.2-alpha harnesses do not export
-# the module; keep this row only in homes booted by a 0.1.2-alpha CLI.)
-- insert:
-    - id: subagent-model-selection-settings
-      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
-PATCH
-  fi
+  #
+  # `subagent-model-selection-settings` is deliberately NOT seeded here: the
+  # bridge's own bundle patch inserts it (the same row @deepseek-ai/dsh-web-app
+  # inserts for the web profile), and a copy in this layer would collide with it
+  # (`duplicate loader entry id` aborts the whole plugin tree). Legacy copies are
+  # retired by the migration below.
   if ! grep -q plugin-package-inventory-deepseek "${USER_PATCH}"; then
     cat >> "${USER_PATCH}" <<'PATCH'
 
@@ -178,6 +171,75 @@ PATCH
 PATCH
   fi
   echo "==> user-layer patch ready: ${USER_PATCH}"
+fi
+
+# 3b. Migration: retire a legacy user-layer copy of
+# `subagent-model-selection-settings`. The bridge's bundle patch inserts that
+# host row itself now (the row @deepseek-ai/dsh-web-app inserts for the web
+# profile), and a second copy — which older revisions of this script wrote into
+# this very file — makes the loader abort with `duplicate loader entry id`,
+# killing every ACP thread. The row is only removed from the user layer, and
+# only when the installed bundle patch actually provides it; a timestamped
+# backup is left next to the file.
+BUNDLE_PATCH="${PROFILE_DIR}/node_modules/dsh-acp-enhanced/cordis.patch.yml"
+ROW_RE='^[[:space:]]*- id:[[:space:]]*subagent-model-selection-settings[[:space:]]*$'
+if [ -f "${BUNDLE_PATCH}" ] \
+  && grep -q 'subagent-model-selection-settings' "${BUNDLE_PATCH}" \
+  && grep -qE "${ROW_RE}" "${USER_PATCH}"; then
+  cp "${USER_PATCH}" "${USER_PATCH}.bak-$(date +%Y%m%d-%H%M%S)"
+  python3 - "${USER_PATCH}" <<'RETIRE'
+import re, sys
+path = sys.argv[1]
+lines = open(path).read().split('\n')
+row = re.compile(r'^([ \t]*)- id:[ \t]*subagent-model-selection-settings[ \t]*$')
+insert = re.compile(r'^([ \t]*)- insert:[ \t]*$')
+
+# pass 1: drop the row (and its deeper-indented body)
+kept, i = [], 0
+while i < len(lines):
+    match = row.match(lines[i])
+    if match is None:
+        kept.append(lines[i]); i += 1; continue
+    indent = len(match.group(1))
+    i += 1
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() == '':
+            nxt = lines[i + 1] if i + 1 < len(lines) else ''
+            if (len(nxt) - len(nxt.lstrip())) > indent:
+                i += 1; continue
+            break
+        if (len(line) - len(line.lstrip())) <= indent:
+            break
+        i += 1
+
+# pass 2: drop `- insert:` blocks with no rows left in them
+final, j = [], 0
+while j < len(kept):
+    match = insert.match(kept[j])
+    if match is None:
+        final.append(kept[j]); j += 1; continue
+    indent = len(match.group(1)); k = j + 1; body = []
+    while k < len(kept):
+        line = kept[k]
+        if line.strip() == '':
+            body.append(line); k += 1; continue
+        if (len(line) - len(line.lstrip())) <= indent:
+            break
+        body.append(line); k += 1
+    if any(re.match(r'^[ \t]*- ', line) for line in body):
+        final.append(kept[j]); final.extend(body)
+    j = k
+
+text = re.sub(r'\n{3,}', '\n\n', '\n'.join(final))
+# A patch layer with no entries must stay the `[]` the profile template ships:
+# a comment-only (empty) document is not a loader patch list.
+if not re.search(r'^[ \t]*- ', text, flags=re.M):
+    text = text.rstrip('\n') + '\n[]\n' if not re.search(r'^\[\][ \t]*$', text, flags=re.M) else text
+open(path, 'w').write(text)
+RETIRE
+  echo "==> retired the legacy user-layer 'subagent-model-selection-settings' row"
+  echo "    (the bundle patch provides it; backup: ${USER_PATCH}.bak-*)"
 fi
 
 # 4. Credentials + settings + authored state, migrated from the default home

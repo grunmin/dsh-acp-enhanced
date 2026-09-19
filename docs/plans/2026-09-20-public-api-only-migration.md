@@ -255,19 +255,27 @@ Keep that path and its arguments working unchanged.
   row in 0.1.2-rc.1, so disabling it would delete `/goal` on ≤0.1.1 hosts.
 - The parent branch `feat/dsh-0.1.3-plus-support` remains the escape hatch for
   users who cannot move off ≤0.1.2-rc.1.
-- **A fresh one-command install cannot boot a `standard` session on 0.1.5**
-  (found in session 3). The shipped `standard` preset mounts `tool-subagent`
-  with `modelSelectionSettings: true`, which needs `subagent-model-selection-settings`
-  in the Host scope; `dsh-base` does not carry it, and the bridge's bundle patch
-  cannot add it because **a duplicate loader entry id is a hard boot failure**
-  (`TypeError: duplicate loader entry id: subagent-model-selection-settings`) —
-  which is exactly what every profile seeded by `init-acp-home.sh` /
-  `host-service-row.mjs` already has. Verified failure on a bare profile:
-  `session/new` → `agent-presets: preset "standard" failed to mount: … tool-subagent:
-  modelSelectionSettings requires …`. A fix must ship the row *and* stop the
-  tooling from seeding a second copy (plus a migration note for existing
-  profiles); the bundle patch is the natural home now that the module exists on
-  every supported CLI. Out of scope for the environment migration in §12.
+- **Fixed in session 3: the bundle patch now ships the `standard` preset's host
+  row.** The shipped `standard` preset mounts `tool-subagent` with
+  `modelSelectionSettings: true`, which needs `subagent-model-selection-settings`
+  in the Host scope; `dsh-base` carries no such row, so a bare
+  `dsh plugin --profile X add dsh-acp-enhanced` profile failed every
+  `session/new` (`agent-presets: preset "standard" failed to mount: … tool-subagent:
+  modelSelectionSettings requires …`). The official `@deepseek-ai/dsh-web-app`
+  bundle inserts this exact row (its `cordis.patch.yml:47`), so the bridge does
+  the same — that is the app-bundle pattern, and the module exists on every
+  supported CLI now that the floor is 0.1.5-rc.2.
+  The row keeps the **canonical id**, so the user layer must not seed a second
+  copy: `cordis-plugin-loader` aborts the whole tree with `duplicate loader entry
+  id: …`. The old seeding is therefore gone from the repo —
+  `scripts/lib/host-service-row.mjs` is deleted, the smoke/MCP scripts no longer
+  call it (so CI now proves a *bare* profile boots and composes a `standard`
+  session), `init-acp-home.sh` no longer writes the row and instead retires a
+  legacy copy (timestamped backup, comments and other rows preserved, `[]`
+  restored when the layer empties), and the doctor classifies
+  `duplicate loader entry id` as mount-time with the exact line to delete.
+  Migration for an existing profile: re-run `scripts/init-acp-home.sh`, or delete
+  the row from `$DSH_HOME/profiles/<name>/cordis.patch.yml` by hand.
 
 ## 11. Execution record (2026-09-20, session 2)
 
@@ -349,10 +357,12 @@ points:
    `dsh plugin --profile acp-enhanced add link:/Users/runmin/dev/dsh-acp-enhanced`
    → `node_modules/dsh-acp-enhanced` is now a symlink to the repo (bridge 0.9.0
    instead of the 0.7.0 tarball), so the running bridge is the working tree.
-3. **The required host row added to the profile's user layer**, because step 1
-   makes it mandatory (see §10's last item for why the bundle patch cannot carry
-   it). `~/.dsh/profiles/acp-enhanced/cordis.patch.yml` now ends with the
-   `subagent-model-selection-settings` insert, commented with the reason.
+3. **The required host row added to the profile's user layer** — first as a
+   hand-written insert, then (later the same session) moved to where it belongs:
+   the bridge's bundle patch, with the user-layer copy removed again. See §10's
+   last item; the temporary hand-edit is not part of the final state.
+   `~/.dsh/profiles/acp-enhanced/cordis.patch.yml` now carries only the local
+   `acp-enhanced` override plus a note explaining why the host row is absent.
 4. **`dsh-free-search` kept at 0.4.24** — the maintainer's rule was "delete it if
    it is incompatible", and it is not: a scratch profile with
    `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` + `dsh-free-search` boots clean
@@ -375,6 +385,14 @@ Verification on the real home (not a scratch one):
 | live `session/new` (standard preset) | OK — modes + `permission_preset` (danger-full-access) + `agent_preset` = `standard` (options: standard, ptc, minimal, cordis, router-standard) |
 | live `session/list` | 481 real sessions read through the 0.1.5 handle API, 198 with titles — the persistence rewrite holds over the existing archive |
 | `dsh --profile web --dump-config` | composes cleanly on 0.1.5-rc.2 (613 rows, no errors), so `dsh web` survives the closure heal |
+
+Follow-up fix shipped in the same session (see §10's last item): the
+`subagent-model-selection-settings` row moved from the profile's user layer into
+`cordis.patch.yml` (the bundle patch, mirroring `@deepseek-ai/dsh-web-app`), the
+legacy seeding helper was deleted, and the migration path was verified three
+ways — bare profile → `READY` + `session/new` OK; profile with a legacy copy →
+`LAYER mount-time`, `SUBJECT duplicate loader entry id: subagent-model-selection-settings`;
+`init-acp-home.sh` → row retired, comments kept, `[]` restored, boot `READY`.
 
 Consequence to remember: the closure flipped from 0.1.1-rc.2 to 0.1.5-rc.2 under
 the ACP threads that were already running (spawned by the old global CLI), which

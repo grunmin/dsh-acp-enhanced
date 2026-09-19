@@ -394,9 +394,10 @@ DSH_ACP_HOME=~/.dsh-acp scripts/init-acp-home.sh   # optional, idempotent: creat
 The isolated home is a deliberate opt-in, not a default: your profile must exist in
 whichever home the launcher boots, or it exits 127 with the exact `dsh plugin … add link:`
 command that creates it. `init-acp-home.sh` ports your old profile's user rows verbatim,
-copies credentials/settings, adds the `subagent-model-selection-settings` host service the
-shipped `standard` preset requires, and disables the DeepSeek plugin-package inventory
-reporter.
+copies credentials/settings, disables the DeepSeek plugin-package inventory reporter, and
+retires a legacy `subagent-model-selection-settings` row from the user layer — that host
+row now belongs to the bridge's bundle patch, and a second copy aborts the boot with
+`duplicate loader entry id`.
 
 Sessions persist under `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd` in both homes;
 nothing is copied between them by default, because the default home's tree also holds
@@ -420,7 +421,7 @@ peer range and the closure version, then classifies the boot into one of three l
 | Layer | Signature in `dsh`'s stderr | What it means | Fix |
 |---|---|---|---|
 | **link-time** | `does not provide an export named …`, `SyntaxError: The requested module …` | the booting CLI's closure cannot satisfy an import this bridge performs | `node <pkg>/scripts/acp-doctor.mjs` — if it prints `LAYER link-time`, align the generation: restart every other dsh process under this home (the shared closure heals to whichever CLI booted last), or pin this launcher with `DSH_PATH=<matching dsh>` |
-| **mount-time** | `failed to apply loader entry …`, `… requires … in the Host scope` | the loader rejected one entry and rethrew, so the whole plugin tree is down | `node <pkg>/scripts/acp-doctor.mjs` prints `SUBJECT <entry> (<module>)` — install the missing module, disable that row (`- id: <entry>` + `disabled: true` in the user layer), or trim `dsh.profile.bundles` to `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` |
+| **mount-time** | `failed to apply loader entry …`, `… requires … in the Host scope`, `duplicate loader entry id: …` | the loader rejected one entry and rethrew, so the whole plugin tree is down | `node <pkg>/scripts/acp-doctor.mjs` prints `SUBJECT <entry> (<module>)` — install the missing module, disable that row (`- id: <entry>` + `disabled: true` in the user layer), or trim `dsh.profile.bundles` to `@deepseek-ai/dsh-base` + `dsh-acp-enhanced`. For a duplicate id, delete the row from your user layer (the bundle patch owns it) |
 | **run-time** | `… is not a function` after a successful handshake | the bridge reached a harness service this CLI generation does not provide | `npm install -g @deepseek-ai/dsh@<version in the supported range>` (see [Compatibility](#compatibility)) |
 
 The launcher translates the same three signatures on **stderr** while Zed boots (stdout is
@@ -432,7 +433,8 @@ the ACP wire), so the agent log already carries the layer and the fix.
 | `exec: dsh: not found` (status 127) | `which dsh` | Use the shipped `dsh-acp-zed.sh` launcher (it locates node/dsh itself), or install the CLI |
 | `no API key for provider route "xxx"` | `ls -l $DSH_HOME/.credentials.yaml` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
 | `SyntaxError: … 'PresetMountError'` | the bridge version in the agent log | You are running a pre-0.9.0 bridge copy against a 0.1.5 host — update this package |
-| `modelSelectionSettings requires … in the Host scope` | `grep subagent-model-selection-settings $DSH_HOME/profiles/acp-enhanced/cordis.patch.yml` | Add the insert row (see the template in `scripts/init-acp-home.sh`) |
+| `modelSelectionSettings requires … in the Host scope` | `dsh --profile acp-enhanced --dump-config \| grep subagent-model-selection` | The host row the `standard` preset needs is missing — the bridge's bundle patch inserts it, so reinstall/upgrade the bridge (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced`), and check that nothing in your user layer sets it `disabled: true` |
+| `duplicate loader entry id: <row>` | the doctor prints `LAYER mount-time` and the id | Two layers ship the same row. Delete it from the profile's user layer (`$DSH_HOME/profiles/acp-enhanced/cordis.patch.yml`) — these host rows belong to the bundle patch. `scripts/init-acp-home.sh` retires the legacy `subagent-model-selection-settings` copy for you |
 | Old threads start empty after a host upgrade | `ls $DSH_HOME/sessions` | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history in (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
 | Cannot switch models | `ACP_DEBUG=1 dsh --profile acp-enhanced`, then try the switch | The carried `reasoning_effort` is unsupported on the target: the bridge remembers the last effort per model (per-profile JSON) and falls back to the model's default rather than failing the switch. Also check the route is real — phantom providers are filtered, only `config.provider`'s models are advertised |
 | Context usage missing | `/status` in the thread | A "phantom provider" route was picked; point the profile's provider at a real route |
