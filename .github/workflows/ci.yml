@@ -31,11 +31,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
       - name: Launcher contract (no implicit home switch)
         run: node scripts/acp-launcher-test.mjs
+      - name: Codec unit tests (offline, deterministic)
+        run: |
+          node scripts/replay-order-test.mjs
+          node scripts/codec-image-test.mjs
+          node scripts/terminal-codec-test.mjs
       - name: Package integrity (tarball contents)
         run: npm pack --dry-run
       - name: Install dsh CLI (${{ matrix.dsh-version }})

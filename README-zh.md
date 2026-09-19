@@ -448,6 +448,7 @@ node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI 用）
 node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
+node scripts/replay-order-test.mjs    # 重放/回退的分块顺序：思考块先于它产出的回复（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
 node scripts/acp-launcher-test.mjs    # 启动器契约：home 不被改写、代次漂移告警、启动失败翻译

@@ -513,6 +513,7 @@ node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
+node scripts/replay-order-test.mjs     # replay/fallback chunk order: reasoning precedes its reply (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once
 node scripts/acp-launcher-test.mjs     # launcher contract: home never rewritten, drift warning, boot-failure translation

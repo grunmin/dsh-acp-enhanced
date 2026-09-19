@@ -39,7 +39,7 @@ function spawnBridge() {
 const client = () => ({
   async sessionUpdate(params) {
     const kind = params?.update?.sessionUpdate
-    if (kind === 'user_message_chunk' || kind === 'agent_message_chunk') {
+    if (kind === 'user_message_chunk' || kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
       history.push({
         kind,
         text: params.update.content?.text ?? '',
@@ -127,6 +127,16 @@ try {
     JSON.stringify(userChunks.map((h) => h.text)))
   check('history replays the assistant reply', agentChunks.some((h) => h.text.includes('你好')),
     JSON.stringify(agentChunks.map((h) => h.text)))
+  // Ordering regression guard: a committed message carries its reasoning before
+  // the text it produced, so a correct replay emits the thinking chunk first.
+  // Emitting text first left the thinking block below its reply — and on the
+  // session's final message that parked a think block at the end of the thread.
+  const lastIndexOfKind = (kind) => history.map((h) => h.kind).lastIndexOf(kind)
+  const lastThought = lastIndexOfKind('agent_thought_chunk')
+  const lastReply = lastIndexOfKind('agent_message_chunk')
+  check('replayed reasoning precedes its reply (no think block lands after the last reply)',
+    lastThought === -1 || (lastReply !== -1 && lastThought < lastReply),
+    `lastThought=${lastThought} lastReply=${lastReply}`)
 
   // follow-up prompt on the resumed agent
   const p2 = await c2.prompt({
