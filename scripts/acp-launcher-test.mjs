@@ -130,6 +130,53 @@ try {
       JSON.stringify(failedBoot.stderr.trim()))
     check(`${testCase.label} translation never reaches stdout`, failedBoot.stdout === '', JSON.stringify(failedBoot.stdout))
   }
+
+  // 7. Supported-floor check: a user who upgrades the bridge but not the CLI
+  //    must be told, instead of meeting a loader error that names an internal
+  //    row. It warns, never blocks, and an unreadable version is ignored.
+  const oldCli = run(home, { FAKE_DSH_VERSION: '0.1.1-rc.2' })
+  check('a CLI below the supported range warns on stderr',
+    /below the range this bridge supports/.test(oldCli.stderr) && /0\.1\.5-rc\.1/.test(oldCli.stderr),
+    JSON.stringify(oldCli.stderr.trim().split('\n')[0] ?? ''))
+  check('the too-old warning does not block the boot',
+    oldCli.status === 0 && /home=/.test(oldCli.stdout),
+    `status=${oldCli.status} stdout=${JSON.stringify(oldCli.stdout.trim().slice(0, 60))}`)
+  check('the too-old warning never reaches stdout',
+    !/below the range/.test(oldCli.stdout), JSON.stringify(oldCli.stdout.trim().slice(0, 60)))
+  const newCli = run(home, { FAKE_DSH_VERSION: '0.1.5-rc.2' })
+  check('a supported CLI is not warned about', !/below the range/.test(newCli.stderr), JSON.stringify(newCli.stderr.trim()))
+  const oddCli = run(home, { FAKE_DSH_VERSION: 'weird' })
+  check('an unreadable CLI version is ignored, not warned about',
+    oddCli.status === 0 && !/below the range/.test(oddCli.stderr),
+    `status=${oddCli.status} stderr=${JSON.stringify(oddCli.stderr.trim())}`)
+
+  // 8. Migration footgun: a user layer that still seeds a row the bundle patch
+  //    now provides aborts the boot with a duplicate id, so say it up front.
+  const seededHome = join(scratch, 'seeded-home')
+  seedProfile(seededHome)
+  writeFileSync(join(seededHome, 'profiles', 'acp-enhanced', 'cordis.patch.yml'),
+    "- insert:\n    - id: subagent-model-selection-settings\n      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'\n")
+  mkdirSync(join(seededHome, 'profiles', 'acp-enhanced', 'node_modules', 'dsh-acp-enhanced'), { recursive: true })
+  writeFileSync(join(seededHome, 'profiles', 'acp-enhanced', 'node_modules', 'dsh-acp-enhanced', 'cordis.patch.yml'),
+    "- insert:\n    - id: subagent-model-selection-settings\n      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'\n")
+  const seeded = run(seededHome)
+  check('a legacy user-layer host row is warned about before the boot',
+    /still seeds 'subagent-model-selection-settings'/.test(seeded.stderr) && /init-acp-home\.sh/.test(seeded.stderr),
+    JSON.stringify(seeded.stderr.trim().split('\n')[0] ?? ''))
+  check('the duplicate-row warning never reaches stdout', !/still seeds/.test(seeded.stdout), JSON.stringify(seeded.stdout.trim().slice(0, 60)))
+  // A comment naming the row must NOT trigger it (users keep explanatory notes).
+  writeFileSync(join(seededHome, 'profiles', 'acp-enhanced', 'cordis.patch.yml'),
+    '# the subagent-model-selection-settings row is provided by the bundle patch\n- id: acp-enhanced\n  config: {}\n')
+  check('a comment mentioning the row is not a false positive', !/still seeds/.test(run(seededHome).stderr))
+
+  // 9. The pre-0.9.0 launcher moved the profile to ~/.dsh-acp on its own; that
+  //    home may still hold a working profile, so name it when it exists.
+  const fakeHome = join(scratch, 'fakehome')
+  mkdirSync(join(fakeHome, '.dsh-acp', 'profiles', 'acp-enhanced'), { recursive: true })
+  const migrated = run(join(scratch, 'empty-home'), { HOME: fakeHome })
+  check('a profile left under ~/.dsh-acp is pointed out',
+    migrated.status === 127 && /Found an existing profile at/.test(migrated.stderr) && /DSH_HOME=/.test(migrated.stderr),
+    `status=${migrated.status} stderr=${JSON.stringify(migrated.stderr.trim().split('\n').slice(-2).join(' | '))}`)
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }

@@ -400,3 +400,39 @@ is precisely the drift the launcher warns about. **Existing Zed threads must be
 restarted** (close/reopen the thread, or restart Zed) to run on the new stack;
 the freshly created session used for the check above was deleted by hand, since
 `session/delete` no longer exists.
+
+## 13. Impact on existing users (analysis, 2026-09-19 session 3)
+
+Who "existing users" are: the npm `latest` is **0.7.0** (0.8.0 was never
+published — this branch is 0.9.0), so every installed copy is on the pre-0.1.3
+API line. `dsh-acp-enhanced` is a caret-on-0.x dependency in the profile, so
+`dsh plugin update` cannot pull a user onto 0.9.0 by accident; the upgrade is
+always explicit.
+
+Each scenario below was executed, not inferred (scratch homes + the shipped
+launcher; the published 0.7.0 tarball fetched with `npm pack`):
+
+| Scenario | Observed | Now mitigated by |
+| --- | --- | --- |
+| **CLI upgraded, bridge left at 0.7.0** | `initialize` OK, then **every `session/new` fails**: `Internal error` → `agent-presets: preset "standard" failed to mount: … tool-subagent: modelSelectionSettings requires … in the Host scope`. 0.7.0 also has **no `agent/assistant-stream`** (0 hits) and no `assistant/message` fallback, and only `persistence.load` (no `open()` handle) — so streaming, replies and the archive would break even if sessions opened | doctor now performs a real `session/new` (the old check stopped at the handshake and would have said READY); `classify` gained a host-scope branch that names the missing service and tells you to move bridge and CLI together. Nothing can warn *before* the fact, because that bridge is already installed |
+| **Bridge upgraded, CLI left behind** (0.1.1-rc.2) | profile dies while loading: `failed to import loader entry subagent-model-selection-settings (…): Package subpath './model-selection-settings' is not defined by "exports"` — names an internal row, not "your dsh is too old" | launcher warns on stderr **before** the boot (`below the range this bridge supports: ^0.1.5-rc.1 || ^0.1.6-alpha.1`); doctor prints `RESULT FAIL — CLI too old` and never boots. Both driven by the new `scripts/lib/dsh-version.mjs` |
+| **Both together, profile seeded per the old README** (`subagent-model-selection-settings` in the user layer) | boot aborts: `TypeError: duplicate loader entry id: subagent-model-selection-settings` | launcher pre-warns (anchored on the real row line, so a comment does not false-positive); doctor classifies the duplicate and prints the fix; `init-acp-home.sh` retires the row (backup, comments kept, `[]` restored) |
+| **Both together, profile booted from a checkout / `DSH_PATH`** | the old launcher had moved the profile to `~/.dsh-acp`; the new one resolves `~/.dsh`, so it exits 127 (`profile not found`) | the missing-profile branch now detects `~/.dsh-acp/profiles/<name>` and prints the exact `DSH_HOME=<home>` fix |
+| **Both together, stock npm install** | works; verified doctor READY, `session/new` OK, 481 archived sessions listed through the 0.1.5 handle API | — |
+| **`session/delete`** | clients lose the capability (Zed stops offering it); persisted files stay under `$DSH_HOME/sessions` | documented; upstream issue still open |
+| **Third-party bundles** | any bundle that cannot load on 0.1.5 kills the whole profile (single failure domain). `dsh-free-search` 0.4.24 and 0.4.32 verified good | doctor names the entry; README's "Keep the profile minimal" |
+
+Two extra checks were added in the same breath:
+
+- **`acp-doctor.mjs` now opens a thread** (`session/new`) after the handshake and
+  before declaring `READY`, and deletes the throwaway session's artifact directly
+  (there is no public delete). Without it the 0.7.0-under-a-new-CLI state looked
+  healthy.
+- **`scripts/lib/dsh-version.mjs`** is the single semver comparison shared by the
+  launcher (via `--supported`) and the doctor (`isSupported`); it fails open on an
+  unreadable version rather than warning wrongly. Unit-checked against the real
+  version strings (0.1.1-rc.2 … 0.1.6-alpha.2, 0.1.10, 0.2.0).
+
+`scripts/acp-launcher-test.mjs` grew to 30 checks, covering the too-old warning
+(warn, never block; stdout untouched), the duplicate-row warning and its
+comment false-positive, and the `~/.dsh-acp` migration hint.

@@ -301,6 +301,32 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 | 启动器**不再改写 `DSH_HOME`** | ACP profile 在启动器所处的 home 中启动（`${DSH_HOME:-$HOME/.dsh}`），与 `dsh web` 共享凭据、设置、会话与 preset | 之前用的是隐式隔离的 `~/.dsh-acp`？在 Zed 的 `agent_servers.env` 里显式指回它（`"DSH_HOME": "<home>/.dsh-acp"`），或迁回共享 home |
 | `assistant/chunk` seam 移除 | 实时流只剩 `agent/assistant-stream`（下限已覆盖该代） | 升级 CLI；完全不发流的宿主仍由已提交的 `assistant/message` 兜底 |
 
+### 从已发布的 ≤ 0.7.0 升级
+
+npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥和 CLI **必须一起动**——只升一半，
+两种顺序都会坏：
+
+| 顺序 | 结果 |
+|---|---|
+| 先升 CLI，桥留在 0.7.0 | profile 能启动、`initialize` 也成功，但**每个 `session/new` 都失败**（Internal error：`tool-subagent: modelSelectionSettings requires … in the Host scope`）。我们无法给出任何提示——那份桥代码已经装好了；而且 0.7.0 既没有 `agent/assistant-stream` seam 也没有 `assistant/message` 兜底，回复同样渲染不出来 |
+| 先升桥，CLI 留在旧版 | profile 在加载期就死（`… subpath './model-selection-settings' is not defined by "exports"`）。启动器会在它**之前**向 stderr 告警，`scripts/acp-doctor.mjs` 则以 `RESULT FAIL — CLI too old` 直接停下 |
+| 两者一起升 | 受支持的状态 |
+
+升级清单：
+
+1. `npm install -g @deepseek-ai/dsh@0.1.5-rc.2`（或上面 peer 范围内的任意版本）。
+2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.9.0`。升级桥是显式动作：profile 里的依赖
+   是对 0.x 的 caret，所以 `dsh plugin update` **不会**自行把你带到新的 minor。
+3. 以前是从检出目录启动、或设过 `DSH_PATH`？旧启动器会自行切到 `~/.dsh-acp`，现在不会了。请在 Zed 的
+   `agent_servers.env` 里设 `DSH_HOME=<那个 home>`，或在默认 home 里重建 profile。启动器若在那里
+   发现 profile，会主动提示。
+4. 以前照旧 README 在 profile 用户层里塞过 `subagent-model-selection-settings`？把它删掉：现在由桥的
+   patch 提供该行，重复 id 会让启动中止。`scripts/init-acp-home.sh` 会自动清理；启动器会告警，doctor
+   会点名该 id。
+5. 确认 profile 里的第三方 bundle 支持 0.1.5（`dsh-free-search` ≥ 0.4.24 已验证）——profile 是单一故障域。
+6. 重启 Zed（或新开一个 agent 线程）；先用 `node <pkg>/scripts/acp-doctor.mjs` 验证整条链路（它现在连
+   开线程都会实测）。
+
 ### 一个 home 只跑一个 CLI 代际
 
 `$DSH_HOME/profiles/node_modules` 是同 home 下所有 profile 共享的**同一个**依赖闭包，

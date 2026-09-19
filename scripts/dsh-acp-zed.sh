@@ -110,14 +110,58 @@ if [ ! -d "${DSH_ACP_PROFILE_DIR}" ]; then
   echo "dsh-acp-zed: profile '${PROFILE_NAME}' not found at '${DSH_ACP_PROFILE_DIR}' (dsh home '${EFFECTIVE_HOME}')" >&2
   echo "  Create it with: ${DASH_BIN} plugin --profile ${PROFILE_NAME} add link:${REPO_DIR}" >&2
   echo "  Or bootstrap an isolated home with: ${REPO_DIR}/scripts/init-acp-home.sh" >&2
+  # Older revisions of this launcher moved the profile to ~/.dsh-acp on its own;
+  # that home is still on disk for anyone who used it, so point at it instead of
+  # letting them recreate a profile from scratch.
+  if [ "${EFFECTIVE_HOME}" != "${HOME}/.dsh-acp" ] && [ -d "${HOME}/.dsh-acp/profiles/${PROFILE_NAME}" ]; then
+    echo "  Found an existing profile at ${HOME}/.dsh-acp/profiles/${PROFILE_NAME}: this launcher no" >&2
+    echo "  longer switches homes by itself. To keep using it, set DSH_HOME=${HOME}/.dsh-acp in Zed's" >&2
+    echo "  agent_servers.env (or copy the profile into '${EFFECTIVE_HOME}')." >&2
+  fi
   exit 127
+fi
+
+# Migration footgun, checked before the boot: older revisions of this project
+# told users to seed `subagent-model-selection-settings` into their user layer,
+# which the bridge's own patch now provides — and the loader aborts the whole
+# tree on a repeated id, with an error that names the row rather than the cause.
+USER_PATCH_FILE="${DSH_ACP_PROFILE_DIR}/cordis.patch.yml"
+INSTALLED_BUNDLE_PATCH="${DSH_ACP_PROFILE_DIR}/node_modules/dsh-acp-enhanced/cordis.patch.yml"
+if [ -f "${USER_PATCH_FILE}" ] && [ -f "${INSTALLED_BUNDLE_PATCH}" ] \
+  && grep -q 'subagent-model-selection-settings' "${INSTALLED_BUNDLE_PATCH}" \
+  && grep -qE '^[[:space:]]*- id:[[:space:]]*subagent-model-selection-settings[[:space:]]*$' "${USER_PATCH_FILE}"; then
+  echo "dsh-acp-zed: warning: ${USER_PATCH_FILE} still seeds 'subagent-model-selection-settings'," >&2
+  echo "  which the bridge's patch now provides itself; the loader aborts the profile on a" >&2
+  echo "  duplicate id. Fix: run ${REPO_DIR}/scripts/init-acp-home.sh (or delete that insert row)." >&2
+fi
+
+# The harness API line this bridge is built against (peerDependencies). Also
+# quoted by the boot diagnostics below, so the messages can never drift from
+# package.json.
+SUPPORTED_RANGE="$(sed -n 's/.*"@deepseek-ai\/dsh-agent"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_DIR}/package.json" | head -n 1)"
+CLI_VERSION="$("${DASH_BIN}" --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
+
+# Supported-floor check, before the boot. This bridge targets ONE declared
+# harness API line, so a CLI below it dies partway through the profile load with
+# a loader error naming an internal row (`… subpath './model-selection-settings'
+# is not defined by "exports"`) instead of the real cause — which reads like a
+# bridge bug and sends people debugging the wrong thing. Say it up front. A
+# version the comparator cannot read (exit 2) is ignored rather than warned
+# about.
+VERSION_HELPER="${REPO_DIR}/scripts/lib/dsh-version.mjs"
+if [ -n "${CLI_VERSION}" ] && [ -n "${SUPPORTED_RANGE}" ] && [ -f "${VERSION_HELPER}" ]; then
+  "${NODE_BIN}" "${VERSION_HELPER}" --supported "${SUPPORTED_RANGE}" "${CLI_VERSION}" >/dev/null 2>&1
+  VERSION_STATUS=$?
+  if [ "${VERSION_STATUS}" = 1 ]; then
+    echo "dsh-acp-zed: warning: the booting CLI is ${CLI_VERSION} (${DASH_BIN}), below the range this bridge supports: ${SUPPORTED_RANGE}." >&2
+    echo "  ACP will fail while the profile loads. Fix: npm install -g @deepseek-ai/dsh@<version in that range>, or point DSH_PATH at a supported CLI." >&2
+  fi
 fi
 
 # Generation drift between the shared closure and the booting CLI (see header).
 CLOSURE_MANIFEST="${EFFECTIVE_HOME}/profiles/node_modules/@deepseek-ai/dsh-agent/package.json"
 if [ -f "${CLOSURE_MANIFEST}" ]; then
   CLOSURE_VERSION="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CLOSURE_MANIFEST}" | head -n 1)"
-  CLI_VERSION="$("${DASH_BIN}" --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
   if [ -n "${CLOSURE_VERSION}" ] && [ -n "${CLI_VERSION}" ] && [ "${CLOSURE_VERSION}" != "${CLI_VERSION}" ]; then
     echo "dsh-acp-zed: warning: ${EFFECTIVE_HOME}/profiles/node_modules holds dsh-agent ${CLOSURE_VERSION}, but ${DASH_BIN} is ${CLI_VERSION}." >&2
     echo "  The closure heals to the booting CLI on this boot; restart every other dsh process under this home (e.g. 'dsh web') afterwards." >&2
@@ -133,10 +177,6 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
     fi
   fi
 fi
-
-# The harness API line this bridge is built against (peerDependencies), quoted
-# in the run-time hint below so the message can never drift from package.json.
-SUPPORTED_RANGE="$(sed -n 's/.*"@deepseek-ai\/dsh-agent"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_DIR}/package.json" | head -n 1)"
 
 # Boot. dsh reports a broken profile as a raw loader/node stack; translate the
 # three failure classes into one actionable line each, without ever swallowing

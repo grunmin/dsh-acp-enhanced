@@ -22,10 +22,11 @@
  * Usage: node scripts/acp-doctor.mjs [--profile <name>] [--home <dir>] [--timeout <ms>]
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isSupported } from './lib/dsh-version.mjs'
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const launcher = join(repoDir, 'scripts', 'dsh-acp-zed.sh')
@@ -139,7 +140,15 @@ function classify(stderr) {
       fix: `the closure was healed to a different CLI generation. Restart the other dsh processes under ${dshHome}, or pin this launcher to the matching CLI with DSH_PATH (resolved: ${cli.path ?? 'none'}, supported: ${supportedRange}).`,
     }
   }
-  if (/failed to apply loader entry|failed to import loader entry|in the Host scope|requires .* to be available|cannot resolve plugin/.test(stderr)) {
+  if (/in the Host scope/.test(stderr)) {
+    const missing = firstOf(/`?(\w+)`? requires [^\s]+ in the Host scope/)
+    return {
+      layer: 'mount-time',
+      subject: `host-scope service missing (${missing ?? 'unnamed'})`,
+      fix: `a preset needs a host row this composition does not mount. If the profile's bridge is older than this checkout, upgrade it (\`dsh plugin --profile ${profileName} add dsh-acp-enhanced\`); otherwise the CLI is older than the bridge (supported: ${supportedRange}) — the two must move together.`,
+    }
+  }
+  if (/failed to apply loader entry|failed to import loader entry|requires .* to be available|cannot resolve plugin/.test(stderr)) {
     // The outermost rejection wraps the real one, so read the innermost entry.
     const entry = firstOf(/failed to import loader entry "?([^"\s(]+)"?/)
       ?? firstOf(/failed to apply loader entry "?([^"\s(]+)"?/)
@@ -194,6 +203,20 @@ if (!existsSync(profileDir)) {
   process.exit(1)
 }
 
+// A CLI below the supported range is the most common upgrade mistake (bridge
+// updated, CLI left behind), and it fails during the profile load with a loader
+// error naming an internal row rather than "your dsh is too old". Diagnose it
+// before booting — the answer is definitive and independent of the profile.
+if (isSupported(cliVersion, supportedRange) === false) {
+  console.log('')
+  console.log(`RESULT  FAIL — CLI too old: ${cliVersion} is below the supported range ${supportedRange}`)
+  console.log('        The bridge targets one declared harness API line; older CLIs lack the')
+  console.log('        services and package subpaths it uses, so the profile dies while loading.')
+  console.log('FIX     npm install -g @deepseek-ai/dsh@<version in that range>')
+  console.log(`        or pin this launcher to a supported CLI: DSH_PATH=<path-to-dsh> (now ${cli.path ?? 'unresolved'})`)
+  process.exit(1)
+}
+
 // ── one real boot: the launcher, the ACP handshake, and the stderr ───────────
 const child = spawn('bash', [launcher], {
   env: {
@@ -207,8 +230,8 @@ const child = spawn('bash', [launcher], {
 
 const stderrLines = []
 let stdout = ''
-let handshake
 let exited
+const pending = new Map()
 
 child.stderr.on('data', (buffer) => {
   for (const line of String(buffer).split('\n')) if (line.trim().length > 0) stderrLines.push(line)
@@ -223,22 +246,30 @@ child.stdout.on('data', (buffer) => {
     } catch {
       continue
     }
-    if (message.id === 'doctor') handshake = message
+    if (message.id !== undefined && pending.has(message.id)) {
+      pending.get(message.id)(message)
+      pending.delete(message.id)
+    }
   }
 })
 child.on('exit', (code) => { exited = code ?? 0 })
 
-child.stdin.write(`${JSON.stringify({
-  jsonrpc: '2.0',
-  id: 'doctor',
-  method: 'initialize',
-  params: { protocolVersion: 1, clientCapabilities: {} },
-})}\n`)
-
-const deadline = Date.now() + timeoutMs
-while (handshake === undefined && exited === undefined && Date.now() < deadline) {
-  await new Promise((resolveWait) => setTimeout(resolveWait, 200))
+/** Write one request and resolve with its response, or undefined on timeout. */
+function request(id, method, params, waitMs) {
+  return new Promise((resolveWait) => {
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      resolveWait(undefined)
+    }, waitMs)
+    pending.set(id, (message) => {
+      clearTimeout(timer)
+      resolveWait(message)
+    })
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+  })
 }
+
+const handshake = await request('doctor/initialize', 'initialize', { protocolVersion: 1, clientCapabilities: {} }, timeoutMs)
 
 // A broken bundle can fail AFTER the ACP server has answered: the transport
 // mounts before the rest of the profile tree, so `initialize` succeeds and the
@@ -251,18 +282,44 @@ if (handshake?.result !== undefined && exited === undefined) {
   }
 }
 
+// Opening a thread is the step a user actually cares about, and it exercises
+// more than the handshake: composing an agent preset (which mounts plugins in a
+// fresh scope). A bridge older than its CLI answers `initialize` and then fails
+// every `session/new` — invisible to a handshake-only check.
+let opened
+if (handshake?.result !== undefined && exited === undefined) {
+  opened = await request('doctor/session-new', 'session/new', { cwd: process.cwd(), mcpServers: [] }, 30_000)
+}
+const createdSessionId = opened?.result?.sessionId
+
+// A diagnostic must not litter the archive, and `session/delete` does not exist
+// (no public persistence delete upstream), so remove the throwaway session's
+// artifact directly — it has no events beyond its header.
+if (createdSessionId !== undefined) {
+  const sessionsRoot = join(dshHome, 'sessions')
+  if (existsSync(sessionsRoot)) {
+    for (const slug of readdirSync(sessionsRoot)) {
+      rmSync(join(sessionsRoot, slug, createdSessionId), { recursive: true, force: true })
+    }
+  }
+}
+
 // An error response is a failure too: fold its message into the evidence the
-// classifier reads.
-const stderr = [stderrLines.join('\n'), handshake?.error === undefined ? '' : JSON.stringify(handshake.error)]
-  .filter((part) => part.length > 0)
-  .join('\n')
+// classifier reads AND into the evidence we print (a session/new refusal is an
+// RPC error, not a stderr line).
+const responseEvidence = [
+  handshake?.error === undefined ? undefined : `initialize -> ${JSON.stringify(handshake.error)}`,
+  opened?.error === undefined ? undefined : `session/new -> ${JSON.stringify(opened.error)}`,
+].filter((part) => part !== undefined)
+const stderr = [stderrLines.join('\n'), ...responseEvidence].filter((part) => part.length > 0).join('\n')
+const evidence = [...stderrLines, ...responseEvidence]
 const agentInfo = handshake?.result?.agentInfo
 const failure = classify(stderr)
 child.kill('SIGTERM')
 
 console.log('')
-if (handshake?.result !== undefined && exited === undefined && failure === undefined) {
-  console.log(`BOOT    OK — ACP initialize answered (agent ${agentInfo?.name ?? '?'} ${agentInfo?.version ?? '?'}) and the profile settled.`)
+if (handshake?.result !== undefined && exited === undefined && failure === undefined && createdSessionId !== undefined) {
+  console.log(`BOOT    OK — ACP initialize answered (agent ${agentInfo?.name ?? '?'} ${agentInfo?.version ?? '?'}), the profile settled, and session/new opened a thread.`)
   if (closureVersion !== undefined && cliVersion !== undefined && closureVersion !== cliVersion) {
     console.log(`WARN    the shared closure holds @deepseek-ai/dsh-agent ${closureVersion} but the CLI is ${cliVersion}; restart the other dsh processes under this home.`)
   }
@@ -270,7 +327,11 @@ if (handshake?.result !== undefined && exited === undefined && failure === undef
   process.exit(0)
 }
 
-if (handshake?.result !== undefined) {
+if (handshake?.result !== undefined && exited === undefined && createdSessionId === undefined) {
+  console.log('BOOT    FAILED at session/new — the handshake and the profile load are fine, but no')
+  console.log('        thread can open, so every new Zed agent thread fails')
+  console.log(`        (${opened === undefined ? 'no response inside the timeout' : 'the request was refused'}).`)
+} else if (handshake?.result !== undefined) {
   console.log('BOOT    FAILED after the handshake — initialize was answered, then the profile died')
   console.log(`        (exit ${exited ?? 'still running'}); a client sees this as an opaque hang, not an error.`)
 } else {
@@ -278,13 +339,13 @@ if (handshake?.result !== undefined) {
 }
 if (failure === undefined) {
   console.log('LAYER   unclassified — the stderr evidence below:')
-  for (const line of evidenceLines(stderrLines)) console.log(`        ${line}`)
+  for (const line of evidenceLines(evidence)) console.log(`        ${line}`)
   console.log(`FIX     trim the profile's bundles to ${MINIMAL_BUNDLES.join(' + ')}, then bisect.`)
 } else {
   console.log(`LAYER   ${failure.layer}`)
   console.log(`SUBJECT ${failure.subject}`)
   console.log(`FIX     ${failure.fix}`)
   console.log('        evidence:')
-  for (const line of evidenceLines(stderrLines)) console.log(`        ${line}`)
+  for (const line of evidenceLines(evidence)) console.log(`        ${line}`)
 }
 process.exit(1)

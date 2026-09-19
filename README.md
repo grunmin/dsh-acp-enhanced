@@ -351,6 +351,36 @@ runtime generation probing left — no version flags, no duck-typed service shap
 | the launcher **no longer rewrites `DSH_HOME`** | the ACP profile boots inside the home the launcher was started with (`${DSH_HOME:-$HOME/.dsh}`), sharing credentials, settings, sessions and presets with `dsh web` | used the old implicit `~/.dsh-acp`? Point the launcher at it explicitly (`"DSH_HOME": "<home>/.dsh-acp"` in Zed's `agent_servers.env`) or migrate back to the shared home |
 | the `assistant/chunk` seam is gone | live streaming is `agent/assistant-stream` only (the floor carries it) | upgrade the CLI; a host that streams nothing is still covered by the committed `assistant/message` fallback |
 
+### Upgrading from a published ≤ 0.7.0
+
+The published `latest` is **0.7.0**, from the pre-0.1.3 API line, so the bridge and the CLI
+have to move **together** — in either order the half-upgraded pair is broken:
+
+| Order | What you get |
+|---|---|
+| CLI first, bridge left at 0.7.0 | The profile boots and `initialize` succeeds, but **every `session/new` fails** with an Internal error (`tool-subagent: modelSelectionSettings requires … in the Host scope`). Nothing can warn you: that bridge copy is already installed, and it also has no `agent/assistant-stream` seam and no `assistant/message` fallback, so replies would not render either |
+| Bridge first, CLI left behind | The profile dies while loading (`… subpath './model-selection-settings' is not defined by "exports"`). The launcher warns on stderr *before* that, and `scripts/acp-doctor.mjs` stops with `RESULT FAIL — CLI too old` |
+| Both together | The supported state |
+
+Checklist:
+
+1. `npm install -g @deepseek-ai/dsh@0.1.5-rc.2` (or any version in the peer range above).
+2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.9.0`. Upgrading the bridge is
+   explicit: the profile's dependency is a caret on 0.x, so `dsh plugin update` will **not**
+   move you to a new minor by itself.
+3. Booted the profile from a checkout, or set `DSH_PATH` before? The old launcher moved you
+   to `~/.dsh-acp` on its own; it does not any more. Set `DSH_HOME=<that home>` in Zed's
+   `agent_servers.env`, or recreate the profile in your default home. The launcher says so if
+   it finds a profile there.
+4. Followed the old README and seeded `subagent-model-selection-settings` in your profile's
+   user layer? Delete the row: the bridge's patch ships it now, and a duplicate id aborts the
+   boot. `scripts/init-acp-home.sh` retires it for you. The launcher warns, and the doctor
+   names the id.
+5. Check that any third-party bundle in the profile supports 0.1.5 (`dsh-free-search` ≥ 0.4.24
+   is verified) — the profile is one failure domain.
+6. Restart Zed (or open a fresh agent thread); `node <pkg>/scripts/acp-doctor.mjs` verifies the
+   whole path first, including opening a thread.
+
 ### One CLI generation per home
 
 `$DSH_HOME/profiles/node_modules` is a single dependency closure shared by every profile

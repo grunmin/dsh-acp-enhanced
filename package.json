@@ -26,6 +26,7 @@
     "scripts/dsh-acp-zed.sh",
     "scripts/init-acp-home.sh",
     "scripts/acp-doctor.mjs",
+    "scripts/lib/dsh-version.mjs",
     "cordis.patch.yml",
     "README.md",
     "README-zh.md",
