@@ -38,6 +38,13 @@
 # `minimal` (极简模式) agent does not leak host-layer tools — an agent's tool
 # registry view resolves agent → preset → global. This mirrors the official
 # dsh-web-app / dsh-tui patch exactly (minus `hmr`, which is web-app-specific).
+#
+# The list must stay version-agnostic: it spans harness generations whose base
+# row sets differ, and the patch applier only warns-and-skips an id it cannot
+# find (`@deepseek-ai/dsh-app-boot` applyEntryPatches). So a row that only some
+# generations ship (e.g. `workflow-ptc` on ≥ 0.1.6, `workflow-worker-thread` /
+# `tool-str-replace-editor` on ≤ 0.1.2-rc.1) is listed unconditionally — the
+# generations that lack it log a benign "entry not found" warning.
 - id: agent-instructions
   disabled: true
 
@@ -66,6 +73,11 @@
   disabled: true
 
 - id: tool-jobs
+  disabled: true
+
+# Added by dsh-base 0.1.6 (the plugin-manager's model-facing tool row); the
+# shipped `standard` preset owns it, exactly like the other tools here.
+- id: tool-plugin-manager
   disabled: true
 
 - id: tool-pwsh
@@ -102,6 +114,13 @@
   disabled: true
 
 - id: tool-workflow
+  disabled: true
+
+# dsh-base 0.1.6 replaced `workflow-worker-thread` with the PTC runtime and
+# mounts the latter enabled; the shipped `standard` preset owns that row, so it
+# is disabled here too (the row is absent on ≤ 0.1.2-rc.1 hosts, where the
+# applier warns and skips).
+- id: workflow-ptc
   disabled: true
 
 - id: workflow-worker-thread
