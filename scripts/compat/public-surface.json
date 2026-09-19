@@ -11,7 +11,15 @@
     "Anything that cannot be pointed at in those catalogs is private and must not",
     "be used. `internal/*` events are always forbidden.",
     "",
-    "scripts/api-surface-check.mjs enforces this list against lib/."
+    "scripts/api-surface-check.mjs enforces this list against lib/:",
+    "  - services and events by literal id, plus the `serviceForAgent(agent, 'id')`",
+    "    call shape that reaches `ctx.get(id)` dynamically",
+    "  - members through the local aliases of those services",
+    "  - imports/exports of every @deepseek-ai/* specifier",
+    "  - the denylist below, as raw strings",
+    "`sessionMethods` records the declared session-log accessors for review; it is",
+    "not scanned mechanically — the `session.events` denylist entry is what catches",
+    "a regression in how the log is read."
   ],
   "supportedDshFloor": "0.1.5-rc.2",
   "frameworkNote": "Cordis framework built-ins (cordis / cordis-plugin-loader), not harness surface.",
@@ -75,6 +83,10 @@
     "agentDefaultModel": {
       "declaredIn": "docs/capability-seams.md: ctx.agentDefaultModel (owner packages/core/agent-default-model); AgentDefaultModelConfig declares currentSelection()/saveSelection() (lib/types/index.d.ts, verified against 0.1.5-rc.2)",
       "members": ["saveSelection", "currentSelection"]
+    },
+    "planMode": {
+      "declaredIn": "ctx.planMode — the service @deepseek-ai/dsh-plan-mode provides from the CLI's own closure (it is not a dependency of this repo, which is why the bridge reaches it by name). Declared at @deepseek-ai/dsh-plan-mode/lib/types/index.d.ts:43 (`planMode: PlanModeController`), public methods at :112 `get(agent)` and :132 `set(agent, active)`. Reached through `serviceForAgent(agent, 'planMode')`, i.e. a dynamic ctx.get — api-surface-check.mjs scans that call shape explicitly.",
+      "members": ["get", "set"]
     }
   },
   "events": {

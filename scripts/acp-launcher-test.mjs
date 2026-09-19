@@ -12,7 +12,7 @@
  * is touched. Usage: node scripts/acp-launcher-test.mjs
  */
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,10 @@ import { fileURLToPath } from 'node:url'
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const launcher = join(repoDir, 'scripts/dsh-acp-zed.sh')
 const scratch = mkdtempSync(join(tmpdir(), 'acp-launcher-test-'))
+/** The range the launcher must quote back comes from the manifest, so this
+ *  assertion cannot drift when the declared floor moves. */
+const declaredRange = JSON.parse(readFileSync(join(repoDir, 'package.json'), 'utf8'))
+  .peerDependencies['@deepseek-ai/dsh-agent']
 
 let failed = 0
 function check(label, ok, detail = '') {
@@ -120,7 +124,7 @@ try {
       label: 'run-time',
       signature: 'TypeError: permission.optionOf is not a function',
       expect: /RUN-TIME failure/,
-      detail: /0\.1\.5-rc\.1/,
+      detail: new RegExp(declaredRange.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     },
   ]
   for (const testCase of cases) {
@@ -136,7 +140,7 @@ try {
   //    row. It warns, never blocks, and an unreadable version is ignored.
   const oldCli = run(home, { FAKE_DSH_VERSION: '0.1.1-rc.2' })
   check('a CLI below the supported range warns on stderr',
-    /below the range this bridge supports/.test(oldCli.stderr) && /0\.1\.5-rc\.1/.test(oldCli.stderr),
+    /below the range this bridge supports/.test(oldCli.stderr) && oldCli.stderr.includes(declaredRange),
     JSON.stringify(oldCli.stderr.trim().split('\n')[0] ?? ''))
   check('the too-old warning does not block the boot',
     oldCli.status === 0 && /home=/.test(oldCli.stdout),

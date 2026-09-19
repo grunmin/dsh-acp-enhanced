@@ -27,8 +27,47 @@ const FILES = ['lib/index.js', 'lib/codec.js', 'lib/terminal-codec.js']
 /**
  * Blank out comments while preserving byte offsets (and therefore line
  * numbers). String and template literals are kept intact — service ids and
- * event names live there.
+ * event names live there — and regex literals are blanked too: a pattern like
+ * `/(?:name|text)="([^"]*)"/` carries a quote, and leaving it in the scan
+ * desynchronised the state machine so every later comment was read as code.
  */
+function regexLiteralEnd(source, i) {
+  // A regex literal cannot contain an unescaped newline. Bounding the search
+  // there is what keeps `a / b / c` from looking like a regex body.
+  for (let j = i + 1; j < source.length; j += 1) {
+    const ch = source[j]
+    if (ch === '\n') return -1
+    if (ch === '\\') { j += 1; continue }
+    if (ch === '[') {
+      // A character class may hold an unescaped `/`; skip to its `]`.
+      for (j += 1; j < source.length; j += 1) {
+        if (source[j] === '\n') return -1
+        if (source[j] === '\\') j += 1
+        else if (source[j] === ']') break
+      }
+      continue
+    }
+    if (ch === '/') return j
+  }
+  return -1
+}
+
+/** Whether the `/` at `i` opens a regex literal rather than a division: the
+ *  previous significant character must not be able to end an operand. */
+function startsRegex(source, i) {
+  let j = i - 1
+  while (j >= 0 && ' \t\r\n'.includes(source[j])) j -= 1
+  if (j < 0) return true
+  if ('([{;,:=!&|?+-*%~^<>'.includes(source[j])) return true
+  if (/[A-Za-z_$]/.test(source[j])) {
+    let k = j
+    while (k >= 0 && /[\w$]/.test(source[k])) k -= 1
+    return ['return', 'typeof', 'case', 'in', 'of', 'instanceof', 'do', 'else', 'yield', 'await', 'delete', 'void', 'new']
+      .includes(source.slice(k + 1, j + 1))
+  }
+  return false
+}
+
 function stripComments(source) {
   const out = [...source]
   let state = 'code'
@@ -39,6 +78,14 @@ function stripComments(source) {
     if (state === 'code') {
       if (ch === '/' && next === '/') { state = 'line'; out[i] = out[i + 1] = ' '; i += 1; continue }
       if (ch === '/' && next === '*') { state = 'block'; out[i] = out[i + 1] = ' '; i += 1; continue }
+      if (ch === '/' && startsRegex(source, i)) {
+        const end = regexLiteralEnd(source, i)
+        if (end !== -1) {
+          for (let j = i; j <= end; j += 1) if (out[j] !== '\n') out[j] = ' '
+          i = end
+          continue
+        }
+      }
       if (ch === '"' || ch === "'" || ch === '`') { state = 'string'; quote = ch; continue }
     } else if (state === 'line') {
       if (ch === '\n') { state = 'code'; continue }
@@ -73,9 +120,17 @@ const eventNames = new Set(Object.keys(surface.events))
 
 // ── 1. services: ctx.get('x') and ctx.x ──────────────────────────────────────
 for (const { file, text } of sources) {
-  for (const match of text.matchAll(/ctx\.get\(\s*'([^']+)'\s*\)/g)) {
+  for (const match of text.matchAll(/ctx\.get\(\s*['"]([^'"]+)['"]\s*\)/g)) {
     if (!serviceNames.has(match[1])) {
       report(file, text, match.index, `undeclared service: ctx.get('${match[1]}')`)
+    }
+  }
+  // The adapter's own dynamic lookup: `serviceForAgent(agent, 'key')` falls
+  // through to `ctx.get(key)`, which no literal scan can see. Without this the
+  // guard passes while a service outside the allow-list is consumed.
+  for (const match of text.matchAll(/serviceForAgent\([^,)]+,\s*['"]([^'"]+)['"]\s*\)/g)) {
+    if (!serviceNames.has(match[1])) {
+      report(file, text, match.index, `undeclared dynamic service: serviceForAgent(…, '${match[1]}')`)
     }
   }
   for (const match of text.matchAll(/\bctx\.([a-zA-Z][a-zA-Z0-9_]*)\b/g)) {
@@ -89,7 +144,7 @@ for (const { file, text } of sources) {
 
 // ── 2. events: ctx.on / ctx.waterfall ───────────────────────────────────────
 for (const { file, text } of sources) {
-  for (const match of text.matchAll(/ctx\.(?:on|waterfall)\(\s*'([^']+)'/g)) {
+  for (const match of text.matchAll(/ctx\.(?:on|waterfall)\(\s*['"]([^'"]+)['"]/g)) {
     const name = match[1]
     if (name.startsWith('internal/')) {
       report(file, text, match.index, `forbidden internal event: ${name}`)
@@ -128,10 +183,13 @@ const aliasToService = new Map()
 for (const { text } of sources) {
   // const helper = () => ctx.get('svc')  → helper name resolves to svc
   const helpers = new Map()
-  for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*\)\s*=>\s*ctx\.get\(\s*'([^']+)'\s*\)/g)) {
+  for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*\)\s*=>\s*ctx\.get\(\s*['"]([^'"]+)['"]\s*\)/g)) {
     helpers.set(match[1], match[2])
   }
-  for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*ctx\.get\(\s*'([^']+)'\s*\)/g)) {
+  for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*ctx\.get\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    aliasToService.set(match[1], match[2])
+  }
+  for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*serviceForAgent\([^,)]+,\s*['"]([^'"]+)['"]\s*\)/g)) {
     aliasToService.set(match[1], match[2])
   }
   for (const match of text.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*ctx\.([a-zA-Z][\w$]*)\b/g)) {
@@ -153,12 +211,13 @@ for (const { file, text } of sources) {
   }
 }
 
-// ── 5. session methods + explicit denylist ──────────────────────────────────
+// ── 5. explicit denylist ────────────────────────────────────────────────────
+// Named private APIs that were used before the 0.9.0 rewrite and must not come
+// back. Session-log accessors are *not* scanned mechanically: `surface.
+// sessionMethods` records the declared ones for review, and `session.events`
+// below is what actually catches a regression there (a detector for arbitrary
+// `session.<method>(` calls is not something a regex can do honestly).
 for (const { file, text } of sources) {
-  for (const name of surface.sessionMethods) {
-    if (text.includes(`.${name}(`)) continue
-    // allowed but currently unused — no violation, just informational later.
-  }
   for (const banned of surface.denylist) {
     let index = text.indexOf(banned)
     while (index !== -1) {

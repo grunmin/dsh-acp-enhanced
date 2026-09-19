@@ -10,8 +10,8 @@
  *
  * Also usable as a command, which is how the bash launcher asks:
  *
- *   node dsh-version.mjs --supported '^0.1.5-rc.1 || ^0.1.6-alpha.1' 0.1.5-rc.2
- *   → exit 0 supported, 1 below the range's floor, 2 unparseable
+ *   node dsh-version.mjs --supported '^0.1.5-rc.2 || ^0.1.6-alpha.1' 0.1.5-rc.2
+ *   → exit 0 supported, 1 outside the range, 2 unparseable
  */
 import { pathToFileURL } from 'node:url'
 
@@ -63,14 +63,45 @@ export function floorOfRange(range) {
   return match?.[1]
 }
 
-/** Whether a CLI version is inside the supported range (floor comparison only:
- *  the caret's ceiling is a major, which no dsh 0.x CLI reaches). Returns
- *  undefined when the version or the range cannot be read. */
+/** The window one `^x.y.z[-pre]` alternative accepts: a floor and the first
+ *  version *past* its ceiling. `undefined` for any other shape, so callers fail
+ *  open rather than guess at a range nobody has taught this helper. */
+function caretBounds(alternative) {
+  const match = /^\s*\^\s*(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?\s*$/.exec(alternative ?? '')
+  if (match === null) return undefined
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  const patch = Number(match[3])
+  // A caret's ceiling is the next *major*, except at 0.x — where it is the next
+  // minor (and at 0.0.x the next patch). dsh is a 0.x CLI, so the distinction is
+  // load-bearing: `^0.1.5` stops at 0.2.0, it does not run to 1.0.0.
+  const ceiling = major > 0 ? `${major + 1}.0.0` : minor > 0 ? `0.${minor + 1}.0` : `0.0.${patch + 1}`
+  const floor = `${major}.${minor}.${patch}${match[4] === undefined ? '' : `-${match[4]}`}`
+  return { floor, ceiling }
+}
+
+/** Whether a CLI version is inside the supported range. Both ends are checked:
+ *  a range's ceiling is the next minor on the 0.x line the bridge targets, so a
+ *  CLI from a line this bridge was never verified against is *not* supported.
+ *
+ *  Deliberately not a semver implementation. Prerelease *gating* is looser than
+ *  npm's (a prerelease above an alternative's floor counts as inside), which
+ *  only ever makes the pre-boot warning quieter — never the other way, which is
+ *  what matters here. Returns `undefined` when the version or the range cannot
+ *  be read, so callers fail open. */
 export function isSupported(cliVersion, range) {
-  const floor = floorOfRange(range)
-  if (floor === undefined) return undefined
-  const order = compareVersions(cliVersion, floor)
-  return order === undefined ? undefined : order >= 0
+  if (parseVersion(cliVersion) === undefined) return undefined
+  let understood = false
+  for (const alternative of String(range ?? '').split('||')) {
+    const bounds = caretBounds(alternative)
+    if (bounds === undefined) continue
+    understood = true
+    const aboveFloor = compareVersions(cliVersion, bounds.floor)
+    const belowCeiling = compareVersions(cliVersion, bounds.ceiling)
+    if (aboveFloor === undefined || belowCeiling === undefined) return undefined
+    if (aboveFloor >= 0 && belowCeiling < 0) return true
+  }
+  return understood ? false : undefined
 }
 
 const invokedDirectly = process.argv[1] !== undefined
