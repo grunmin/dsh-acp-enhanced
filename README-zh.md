@@ -198,11 +198,18 @@ seam 的 `searchProvider`，往 profile 里挂任意 `ctx.web` provider 即可�
 走用户层 `insert` 挂载（见下节）。你的 dsh 部署里有哪些 provider 是 profile 层的
 事，与 bridge 无关。
 
+代价要说清楚：provider bundle 位于**每个 ACP 线程的启动路径**上，一旦加载失败整个
+profile 都会挂掉，Zed 侧表现为无输出的卡死。若插件只是新增模型侧工具，优先放进 preset
+composition（见[保持 profile 最小化](#保持-profile-最小化)）；而必须配置宿主 `web` 行的
+provider 只能待在宿主组合（即 profile）里——那就明确接受这一风险，并在每次改动后重跑
+doctor。
+
 ### 管理 profile 的插件
 
-dsh-acp-enhanced 跑在**独立的 profile** 里——`acp-enhanced`（由上面的安装命令创建于
-`~/.dsh/profiles/acp-enhanced/`），与 `dsh web` 背后的 `web` profile 完全隔离，
-在这里增删改插件不会影响 web 侧的任何配置。
+dsh-acp-enhanced 跑在**独立的 profile** 里——`acp-enhanced`，位于
+`~/.dsh/profiles/acp-enhanced/`，与 `dsh web` 同处一个 dsh home。被隔离的是**组合**
+本身，所以在
+这里增删改插件不会影响 web 侧的配置，而凭据、设置、会话与 preset 仍是共享的。
 
 profile 的插件树由三层组合而成，后层修补前层：
 
@@ -241,6 +248,36 @@ dsh --profile acp-enhanced --dump-config             # 查看组合后的完整�
 
 改动在**下一个**进程生效：Zed 为每个 agent 线程拉起一个全新的
 `dsh --profile acp-enhanced`，编辑 profile 后新开 agent 线程（或重启 Zed）即可。
+
+#### 保持 profile 最小化
+
+profile 是一个**单一故障域**：`cordis-plugin-loader` 会等待每个条目，并把第一个 reject
+原样抛出，因此只要有一行加载失败，整棵插件树就会中止——进程甚至可能先正常应答 ACP
+`initialize` 再立刻退出，客户端只会表现为无输出的卡死，而不是报错。
+
+把 `dsh.profile.bundles` 控制在这两行以内，它们的版本不可能与启动它的 CLI 不匹配：
+
+```json
+"bundles": ["@deepseek-ai/dsh-base", "dsh-acp-enhanced"]
+```
+
+`@deepseek-ai/dsh-base` 随 CLI 一起发布，版本天然等同于启动它的 CLI；其他任何 bundle 都是
+第三方，其依赖闭包可能漂移。额外插件请挂到「坏了只废掉一个 preset」的位置：
+
+- **只新增模型侧工具/命令的插件** → 把行写进某个 preset composition。用户 preset 放在
+  `$DSH_HOME/.agent-presets/<id>/`（组合写 `agent.cordis.yml`，选择器里的名称写
+  `preset.yml`）；roster 会自动发现，ACP 的 `agent_preset` 下拉也会列出。组合加载失败的
+  preset 只会被标记为 broken 并从列表里剔除，不会拖垮进程。
+- **需要配置宿主服务的插件**（例如要覆写宿主 `web` 行 `searchProvider` 的搜索 provider）
+  → 它属于宿主组合，也就是 profile。这是有意的取舍：接受启动路径上的风险，并在每次改动
+  后重跑 doctor。
+
+改动后先验证再信任：
+
+```sh
+node <pkg>/scripts/acp-doctor.mjs          # bundle 与版本、peer 范围，并真实启动一次
+dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
+```
 
 ## 兼容性
 
@@ -296,17 +333,39 @@ scripts/init-acp-home.sh            # 幂等；重跑不会覆盖你的文件
 
 ## 故障排查
 
-| 症状 | 处理 |
-|---|---|
-| `exec: dsh: not found`（status 127） | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh） |
-| `no API key for provider route "xxx"` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
-| `SyntaxError: ... 'PresetMountError'` | 你在 0.1.2-alpha 宿主上运行 0.7.0 之前的桥副本——升级本包 |
-| `modelSelectionSettings requires ... in the Host scope` | 0.1.2-alpha 宿主缺少 `subagent-model-selection-settings` 行——运行 `scripts/init-acp-home.sh`（或按脚本模板在用户层补 insert 行） |
-| 宿主升级后旧线程变空白 | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进独立 home（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
-| 无法切换模型 | 保存的 `reasoning_effort` 默认值（或会话当前 effort）被带到新模型上。0.3.6 起本桥按模型记住上次使用的强度（随 profile 持久化）：不被新模型支持的 effort 会被该模型记忆值替换——没有记忆则回退其默认值，再无默认则取第一个可选值，既不会切换失败也不会出现 "unknown"。另检查：是否选到了不可路由的"幽灵 provider"——本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
-| 上下文用量不显示 | 选到了不可路由的"幽灵 provider"；本桥默认过滤（只广播 `config.provider` 的模型），确认 profile 的 provider 指向真实路由 |
-| 轮次以 usage 结束但**面板没有回复文本**（空白） | 宿主没有发出任何实时流分片，块级流式因此无内容可转发。0.8.0 起本桥会同时接管两条 seam——`assistant/chunk` 会话事件（≤ 0.1.2-rc.1）与 0.1.3-alpha.2 起取代它的 `agent/assistant-stream` 帧——并在某个 step 完全没有上线文本时回退到已提交的 `assistant/message`，因此回复不会丢失。若你用的是更早的桥副本，请升级。用 `ACP_DEBUG=1` 诊断：帧代宿主会打印 `agent/assistant-stream frame=chunk`，旧代打印 `assistant/chunk`；只有 `assistant/message` 而无上述两者即为兜底路径 |
-| 需要详细诊断 | `ACP_DEBUG=1 dsh --profile acp-enhanced`（stderr 生命周期 trace） |
+先跑 doctor：它会完全按 Zed 的方式启动一次 profile，并指出失败层、出问题的 bundle 与修法。
+
+```sh
+node <pkg>/scripts/acp-doctor.mjs              # 已安装副本
+node scripts/acp-doctor.mjs                    # 仓库检出（npm run doctor）
+node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 60000
+```
+
+它会打印 CLI 与版本、home、profile、每个 bundle 及其版本、支持的 peer 范围与共享闭包版本，
+然后把启动失败归入三层之一：
+
+| 层 | `dsh` stderr 里的特征 | 含义 | 修法 |
+|---|---|---|---|
+| **link-time** | `does not provide an export named …`、`SyntaxError: The requested module …` | 启动的 CLI 闭包无法满足本桥的某个 import | 见 doctor 的 `LAYER link-time`：对齐代次——重启该 home 下其他 dsh 进程（共享闭包会愈合到最后启动的那个 CLI），或用 `DSH_PATH=<匹配的 dsh>` 锁定本启动器 |
+| **mount-time** | `failed to apply loader entry …`、`… requires … in the Host scope` | loader 拒绝了某一个条目并向上抛出，整棵插件树因此中止 | doctor 会打印 `SUBJECT <条目> (<模块>)`——补装缺失模块、在用户层禁用该行（`- id: <条目>` + `disabled: true`），或把 `dsh.profile.bundles` 收敛为 `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` |
+| **run-time** | 握手成功后出现 `… is not a function` | 桥调用到了该 CLI 代次不提供的 harness 服务方法 | `npm install -g @deepseek-ai/dsh@<支持范围内的版本>`（见[兼容性](#兼容性)） |
+
+启动器在 Zed 启动过程中会把同样三类特征翻译到 **stderr**（stdout 是 ACP 协议线），
+所以 agent 日志里已经带有失败层与修法。
+
+| 症状 | 定位 | 处理 |
+|---|---|---|
+| Zed 卡死无输出、线程始终不应答 | `node <pkg>/scripts/acp-doctor.mjs` | 会打印 `BOOT FAILED` 与 `LAYER`/`SUBJECT`/`FIX`，照 `FIX` 做即可。先应答 `initialize` 再立刻退出的 profile 也会被如实报出 |
+| `exec: dsh: not found`（status 127） | `which dsh` | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh），或安装 CLI |
+| `no API key for provider route "xxx"` | `ls -l $DSH_HOME/.credentials.yaml` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
+| `SyntaxError: … 'PresetMountError'` | agent 日志里的桥版本 | 你在 0.1.5 宿主上跑 0.9.0 之前的桥副本——升级本包 |
+| `modelSelectionSettings requires … in the Host scope` | `grep subagent-model-selection-settings $DSH_HOME/profiles/acp-enhanced/cordis.patch.yml` | 补上 insert 行（模板见 `scripts/init-acp-home.sh`） |
+| 宿主升级后旧线程变空白 | `ls $DSH_HOME/sessions` | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进来（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
+| 无法切换模型 | `ACP_DEBUG=1 dsh --profile acp-enhanced`，然后尝试切换 | 携带的 `reasoning_effort` 在目标模型上不受支持：本桥按模型记住上次使用的强度（随 profile 持久化），会回退到该模型默认值而不是让切换失败。另检查路由是否真实——幽灵 provider 会被过滤，只广播 `config.provider` 的模型 |
+| 上下文用量不显示 | 线程里执行 `/status` | 选到了不可路由的"幽灵 provider"；确认 profile 的 provider 指向真实路由 |
+| 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
+| 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
+| 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
 ## 开发
 
@@ -322,7 +381,9 @@ node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络�
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
-scripts/init-acp-home.sh              # 引导/刷新独立 home（~/.dsh-acp）
+node scripts/acp-launcher-test.mjs    # 启动器契约：home 不被改写、代次漂移告警、启动失败翻译
+node scripts/acp-doctor.mjs           # 真实启动一次 profile，指出失败层与出问题的 bundle
+scripts/init-acp-home.sh              # 可选：引导**独立** home（启动器不会自行切过去）
 ```
 
 harness 包的 devDependency 与锁定的 `@deepseek-ai/dsh` CLI 声明相同的 range（如

@@ -31,6 +31,7 @@ function check(label, ok, detail = '') {
 const fakeDsh = join(scratch, 'fake-dsh')
 writeFileSync(fakeDsh, `#!/bin/bash
 if [ "\${1:-}" = "--version" ]; then echo "\${FAKE_DSH_VERSION:-0.1.5-rc.2}"; exit 0; fi
+if [ -n "\${FAKE_DSH_FAIL:-}" ]; then echo "\${FAKE_DSH_FAIL}" >&2; exit 1; fi
 echo "home=\${DSH_HOME:-<unset>} profile_dir=\${DSH_ACP_PROFILE_DIR:-<unset>} args=$*"
 `)
 chmodSync(fakeDsh, 0o755)
@@ -99,6 +100,36 @@ try {
   const pinned = run(home, { DSH_ACP_PROFILE_DIR: join(home, 'profiles', 'acp-enhanced') })
   check('DSH_ACP_PROFILE_DIR is honored',
     pinned.stdout.includes(`profile_dir=${join(home, 'profiles', 'acp-enhanced')}`), JSON.stringify(pinned.stdout.trim()))
+
+  // 6. Boot-failure translation: the raw signature is kept, one classified hint
+  //    is added, and stdout stays the ACP wire.
+  const cases = [
+    {
+      label: 'link-time',
+      signature: "Error [ERR_MODULE_NOT_FOUND]: The requested module '@deepseek-ai/dsh-agent' does not provide an export named 'installModelSelection'",
+      expect: /LINK-TIME failure/,
+      detail: /@deepseek-ai\/dsh-agent/,
+    },
+    {
+      label: 'mount-time',
+      signature: 'Error: failed to apply loader entry "tool-web"',
+      expect: /MOUNT-TIME failure/,
+      detail: /acp-doctor\.mjs/,
+    },
+    {
+      label: 'run-time',
+      signature: 'TypeError: permission.optionOf is not a function',
+      expect: /RUN-TIME failure/,
+      detail: /0\.1\.5-rc\.1/,
+    },
+  ]
+  for (const testCase of cases) {
+    const failedBoot = run(home, { FAKE_DSH_FAIL: testCase.signature })
+    check(`${testCase.label} failure is classified on stderr`,
+      failedBoot.stderr.includes(testCase.signature) && testCase.expect.test(failedBoot.stderr) && testCase.detail.test(failedBoot.stderr),
+      JSON.stringify(failedBoot.stderr.trim()))
+    check(`${testCase.label} translation never reaches stdout`, failedBoot.stdout === '', JSON.stringify(failedBoot.stdout))
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }

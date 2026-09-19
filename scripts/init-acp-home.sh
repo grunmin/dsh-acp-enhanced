@@ -86,6 +86,24 @@ if [ -n "${BAD_BUNDLES}" ]; then
 fi
 echo "==> profile bundles verified (base + acp-enhanced, no dsh-mnemon)"
 
+# 2b. The profile is a single failure domain: the loader rethrows the first
+# rejected entry, so any extra bundle is a boot-wide risk. Report them instead
+# of removing them — the operator may have accepted the trade deliberately.
+EXTRA_BUNDLES="$(python3 -c "
+import json
+p = json.load(open('${PROFILE_DIR}/package.json'))
+bundles = p.get('dsh', {}).get('profile', {}).get('bundles', [])
+minimal = {'@deepseek-ai/dsh-base', 'dsh-acp-enhanced'}
+print(','.join(sorted(set(bundles) - minimal)), end='')
+")"
+if [ -n "${EXTRA_BUNDLES}" ]; then
+  echo "==> note: extra bundle(s) in this profile: ${EXTRA_BUNDLES}" >&2
+  echo "    Every extra bundle sits on the boot path of every ACP thread; a single failing" >&2
+  echo "    entry aborts the whole profile. Prefer a preset composition for plugins that" >&2
+  echo "    only add model-facing tools, and re-run ${REPO_DIR}/scripts/acp-doctor.mjs after" >&2
+  echo "    any change (README: 'Keep the profile minimal')." >&2
+fi
+
 # 3. User-layer patch: appended to the profile's template (init ships a
 # comment-only cordis.patch.yml) only when it holds no entries yet — after
 # that the file belongs to the user and re-runs never touch it.

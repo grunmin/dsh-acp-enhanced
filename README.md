@@ -235,11 +235,19 @@ model-facing `web_search` tool rides on the `web` seam's `searchProvider`, so mo
 `insert` rows (see below). Which provider exists in your dsh deployment is a profile
 concern, not a bridge one.
 
+Note what that costs: a provider bundle sits on the **boot path** of every ACP thread, so
+if it fails to load, the whole profile dies and Zed shows an opaque hang. Prefer a preset
+composition when the plugin only adds model-facing tools (see
+[Keep the profile minimal](#keep-the-profile-minimal)); a provider that must configure the
+host `web` row belongs in the host composition (the profile) — mount it deliberately, and
+re-run the doctor after changing it.
+
 ### Managing the profile's plugins
 
 dsh-acp-enhanced runs in its **own profile** — `acp-enhanced`, created at
-`~/.dsh/profiles/acp-enhanced/` by the install command above — fully separate from the
-`web` profile behind `dsh web`, so plugin changes here never affect your web setup.
+`~/.dsh/profiles/acp-enhanced/` — inside the same dsh home as `dsh web`. The profile is
+what isolates the *composition*, so plugin changes here never affect your web setup,
+while credentials, settings, sessions and presets stay shared.
 
 The profile composes its plugin tree from three sources, each layer patching the ones
 before it:
@@ -284,6 +292,41 @@ consequences worth knowing:
 Changes take effect in the **next** process: Zed spawns a fresh
 `dsh --profile acp-enhanced` for every agent thread, so open a new agent thread (or
 restart Zed) after editing the profile.
+
+#### Keep the profile minimal
+
+The profile is a **single failure domain**. `cordis-plugin-loader` awaits every entry and
+rethrows the first rejection, so one unloadable row aborts the whole plugin tree: the
+process may even answer the ACP `initialize` handshake first and die right after, which a
+client reports as an opaque hang, not an error.
+
+Keep `dsh.profile.bundles` at exactly the two rows that cannot mismatch their own boot:
+
+```json
+"bundles": ["@deepseek-ai/dsh-base", "dsh-acp-enhanced"]
+```
+
+`@deepseek-ai/dsh-base` ships with the CLI, so its version always matches the CLI that
+boots it; every other bundle is a third party whose dependency closure can drift. Mount
+extra plugins where a failure costs one preset instead of the whole editor session:
+
+- **Plugin adds only model-facing tools/commands** → declare its row in a preset
+  composition. User presets live in `$DSH_HOME/.agent-presets/<id>/` (`agent.cordis.yml`
+  for the composition, `preset.yml` for the picker label); the roster discovers them
+  automatically and the ACP `agent_preset` dropdown lists them. A preset whose
+  composition fails to load is reported as broken and simply not offered, instead of
+  killing the process.
+- **Plugin must configure a host service** (e.g. a search provider overriding the host
+  `web` row's `searchProvider`) → it belongs in the host composition, i.e. the profile.
+  That is a deliberate trade: accept the boot-path risk, and re-run the doctor after any
+  change.
+
+Check the result before trusting it:
+
+```sh
+node <pkg>/scripts/acp-doctor.mjs          # bundles + versions, the peer range, and one real boot
+dsh --profile acp-enhanced --dump-config   # where each row comes from
+```
 
 ## Compatibility
 
@@ -351,17 +394,40 @@ Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| `exec: dsh: not found` (status 127) | Use the shipped `dsh-acp-zed.sh` launcher (locates node/dsh itself) |
-| `no API key for provider route "xxx"` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
-| `SyntaxError: ... 'PresetMountError'` | You are running a pre-0.7.0 bridge copy against a 0.1.2-alpha host — update this package |
-| `modelSelectionSettings requires ... in the Host scope` | A 0.1.2-alpha host without the `subagent-model-selection-settings` row — run `scripts/init-acp-home.sh` (or add the insert row to your user layer, see the script) |
-| Old threads start empty after a host upgrade | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history to the isolated home (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
-| Cannot switch models | The saved `reasoning_effort` default (or the session's current effort) is carried onto the new model. Since 0.3.6 the bridge remembers the last effort per model (per-profile JSON): an unsupported carried effort is replaced by that model's remembered effort, else its own default, else its first offered effort — never an "unknown" dropdown, never a failed switch. Also check: a "phantom provider" route was picked — this bridge filters them by default (only `config.provider`'s models are advertised), so point the profile's provider at a real route |
-| Context usage missing | A "phantom provider" route was picked; this bridge filters them by default (only `config.provider`'s models are advertised) — point the profile's provider at a real route |
-| Turn settles with usage but **no reply text** (empty panel) | The host emitted no live stream chunks, so block-level streaming had nothing to forward. From 0.8.0 the bridge claims both live seams — the `assistant/chunk` session event (≤ 0.1.2-rc.1) and the `agent/assistant-stream` frames that replaced it in 0.1.3-alpha.2 — and falls back to the committed `assistant/message` whenever a step streamed nothing, so the reply is never lost. On an older bridge copy, upgrade. Diagnose with `ACP_DEBUG=1`: frames hosts log `agent/assistant-stream frame=chunk`, legacy hosts log `assistant/chunk`; an `assistant/message` turn with neither is the fallback path |
-| Need detailed diagnostics | `ACP_DEBUG=1 dsh --profile acp-enhanced` (stderr lifecycle trace) |
+Start with the doctor: it boots the profile exactly as Zed does and names the failure
+layer, the offending bundle and the fix.
+
+```sh
+node <pkg>/scripts/acp-doctor.mjs              # installed copy
+node scripts/acp-doctor.mjs                    # from a checkout (npm run doctor)
+node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 60000
+```
+
+It prints the CLI + version, the home, the profile, every bundle + version, the supported
+peer range and the closure version, then classifies the boot into one of three layers:
+
+| Layer | Signature in `dsh`'s stderr | What it means | Fix |
+|---|---|---|---|
+| **link-time** | `does not provide an export named …`, `SyntaxError: The requested module …` | the booting CLI's closure cannot satisfy an import this bridge performs | `node <pkg>/scripts/acp-doctor.mjs` — if it prints `LAYER link-time`, align the generation: restart every other dsh process under this home (the shared closure heals to whichever CLI booted last), or pin this launcher with `DSH_PATH=<matching dsh>` |
+| **mount-time** | `failed to apply loader entry …`, `… requires … in the Host scope` | the loader rejected one entry and rethrew, so the whole plugin tree is down | `node <pkg>/scripts/acp-doctor.mjs` prints `SUBJECT <entry> (<module>)` — install the missing module, disable that row (`- id: <entry>` + `disabled: true` in the user layer), or trim `dsh.profile.bundles` to `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` |
+| **run-time** | `… is not a function` after a successful handshake | the bridge reached a harness service this CLI generation does not provide | `npm install -g @deepseek-ai/dsh@<version in the supported range>` (see [Compatibility](#compatibility)) |
+
+The launcher translates the same three signatures on **stderr** while Zed boots (stdout is
+the ACP wire), so the agent log already carries the layer and the fix.
+
+| Symptom | Locate | Fix |
+|---|---|---|
+| Zed hangs with no output; the thread never answers | `node <pkg>/scripts/acp-doctor.mjs` | Prints `BOOT FAILED` + `LAYER`/`SUBJECT`/`FIX`; follow the `FIX` line. A profile that answers `initialize` and dies right after is reported as such |
+| `exec: dsh: not found` (status 127) | `which dsh` | Use the shipped `dsh-acp-zed.sh` launcher (it locates node/dsh itself), or install the CLI |
+| `no API key for provider route "xxx"` | `ls -l $DSH_HOME/.credentials.yaml` | Write `~/.dsh/.credentials.yaml`, or set `env.DEEPSEEK_API_KEY` on the agent_servers entry |
+| `SyntaxError: … 'PresetMountError'` | the bridge version in the agent log | You are running a pre-0.9.0 bridge copy against a 0.1.5 host — update this package |
+| `modelSelectionSettings requires … in the Host scope` | `grep subagent-model-selection-settings $DSH_HOME/profiles/acp-enhanced/cordis.patch.yml` | Add the insert row (see the template in `scripts/init-acp-home.sh`) |
+| Old threads start empty after a host upgrade | `ls $DSH_HOME/sessions` | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history in (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
+| Cannot switch models | `ACP_DEBUG=1 dsh --profile acp-enhanced`, then try the switch | The carried `reasoning_effort` is unsupported on the target: the bridge remembers the last effort per model (per-profile JSON) and falls back to the model's default rather than failing the switch. Also check the route is real — phantom providers are filtered, only `config.provider`'s models are advertised |
+| Context usage missing | `/status` in the thread | A "phantom provider" route was picked; point the profile's provider at a real route |
+| Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
+| Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
+| Need detailed diagnostics | — | `ACP_DEBUG=1` (stderr lifecycle trace) and `ACP_LOG=/tmp/acp.jsonl` (per-event JSONL with timings) |
 
 ## Development
 
@@ -377,7 +443,9 @@ node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once
-scripts/init-acp-home.sh              # bootstrap/refresh the isolated home (~/.dsh-acp)
+node scripts/acp-launcher-test.mjs     # launcher contract: home never rewritten, drift warning, boot-failure translation
+node scripts/acp-doctor.mjs            # boot the profile once and name the failing layer/bundle
+scripts/init-acp-home.sh              # optional: bootstrap an *isolated* home (the launcher never switches to it by itself)
 ```
 
 DevDependency pins for the harness packages use the same ranges the pinned

@@ -134,4 +134,40 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
   fi
 fi
 
-exec "${DASH_BIN}" --profile "${PROFILE_NAME}" "$@"
+# The harness API line this bridge is built against (peerDependencies), quoted
+# in the run-time hint below so the message can never drift from package.json.
+SUPPORTED_RANGE="$(sed -n 's/.*"@deepseek-ai\/dsh-agent"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_DIR}/package.json" | head -n 1)"
+
+# Boot. dsh reports a broken profile as a raw loader/node stack; translate the
+# three failure classes into one actionable line each, without ever swallowing
+# the original diagnostic (Zed shows stderr in its agent log). The translation
+# runs in a process substitution so stdout — the ACP wire — is untouched.
+# (Defined as a function because bash 3.2 cannot parse `case … ;;` directly
+# inside a process substitution.)
+translate_boot_stderr() {
+  local hinted=0 line pkg
+  while IFS= read -r line; do
+    printf '%s\n' "${line}" >&2
+    [ "${hinted}" = 1 ] && continue
+    case "${line}" in
+      *"does not provide an export named"*)
+        pkg="$(printf '%s' "${line}" | sed -n "s/.*module '\([^']*\)'.*/\1/p")"
+        printf 'dsh-acp-zed: LINK-TIME failure: %s does not export what this bridge imports from it under %s.\n' "${pkg:-a harness bundle}" "${DASH_BIN}" >&2
+        printf '  The profile closure (%s/profiles/node_modules) is healed to whichever dsh booted last; restart the other dsh processes under this home, or pin this one with DSH_PATH.\n' "${EFFECTIVE_HOME}" >&2
+        hinted=1
+        ;;
+      *"failed to apply loader entry"*|*"in the Host scope"*)
+        printf 'dsh-acp-zed: MOUNT-TIME failure: the loader rejected one entry and rethrows on the first failure, so the whole profile is down (one bundle is a single failure domain).\n' >&2
+        printf '  Name the offending bundle with: %s/scripts/acp-doctor.mjs\n' "${REPO_DIR}" >&2
+        hinted=1
+        ;;
+      *"is not a function"*)
+        printf 'dsh-acp-zed: RUN-TIME failure: the bridge called a harness method this dsh does not provide; it supports %s (peerDependencies).\n' "${SUPPORTED_RANGE:-the declared peer range}" >&2
+        printf '  Upgrade the CLI (npm install -g @deepseek-ai/dsh@<version in that range>), then run %s/scripts/acp-doctor.mjs\n' "${REPO_DIR}" >&2
+        hinted=1
+        ;;
+    esac
+  done
+}
+
+exec "${DASH_BIN}" --profile "${PROFILE_NAME}" "$@" 2> >(translate_boot_stderr)
