@@ -34,10 +34,23 @@
 # `presets.mount()` (inside the agent factory's `setup`) and exposes the choice
 # on the ACP wire as the `agent_preset` config option + `/preset` command.
 #
-# Every dsh-base model-facing row a preset now owns is disabled here, so a
-# `minimal` (极简模式) agent does not leak host-layer tools — an agent's tool
-# registry view resolves agent → preset → global. This mirrors the official
-# dsh-web-app / dsh-tui patch exactly (minus `hmr`, which is web-app-specific).
+# Every dsh-base model-facing row a preset owns on EVERY supported generation is
+# disabled here, so a `minimal` (极简模式) agent does not leak host-layer tools —
+# an agent's tool registry view resolves agent → preset → global. This mirrors
+# the official dsh-web-app / dsh-tui patch (minus `hmr`, which is
+# web-app-specific).
+#
+# `command-goal` is deliberately NOT in the list even though the current
+# standard preset owns it and the web-app patch disables it. The shipped
+# standard preset only started owning that row in 0.1.2-rc.1: on ≤ 0.1.1-rc.2 the
+# base row is `/goal`'s ONLY provider, so disabling it here would delete the
+# command on those hosts. A patch is static YAML and its `!!js` expressions are
+# evaluated against the loader context plus globals only
+# (`cordis-plugin-loader` `new Function('ctx','expr', 'with (ctx) …')`), which
+# exposes no harness version — so the disable cannot be made generation-aware.
+# Consequence, accepted: on ≥ 0.1.2 a `minimal`/`code` session still advertises
+# `/goal` from the base layer. Do not "fix" this by adding the row; it would
+# regress every ≤ 0.1.1-rc.2 host.
 #
 # The list must stay version-agnostic: it spans harness generations whose base
 # row sets differ, and the patch applier only warns-and-skips an id it cannot
