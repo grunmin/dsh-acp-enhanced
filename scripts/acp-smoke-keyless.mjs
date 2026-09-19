@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
+import { dshHome, seedHostServiceRow } from './lib/host-service-row.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const profile = `acp-ci-${process.pid}`
@@ -38,6 +39,7 @@ if (setup.status !== 0) {
   console.error('FAIL  could not create profile via dsh plugin add')
   process.exit(1)
 }
+seedHostServiceRow(profile)
 
 const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'inherit'] })
 const pending = new Map()
@@ -266,7 +268,7 @@ async function main() {
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
   } finally {
     child.kill()
-    spawnSync('rm', ['-rf', `${process.env.HOME}/.dsh/profiles/${profile}`])
+    spawnSync('rm', ['-rf', path.join(dshHome(), 'profiles', profile)])
   }
   process.exit(failed === 0 ? 0 : 1)
 }

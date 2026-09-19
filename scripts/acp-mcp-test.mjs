@@ -15,6 +15,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
+import { dshHome, seedHostServiceRow } from './lib/host-service-row.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mcp-echo-server.mjs')
@@ -39,6 +40,7 @@ if (explicit.length > 0) {
     console.error('FAIL  could not create profile via dsh plugin add')
     process.exit(1)
   }
+  seedHostServiceRow(tempProfile)
   cmd = 'dsh'
   args = ['--profile', tempProfile]
 }
@@ -148,7 +150,7 @@ async function main() {
   } finally {
     child.kill()
     if (tempProfile !== undefined) {
-      spawnSync('rm', ['-rf', `${process.env.HOME}/.dsh/profiles/${tempProfile}`])
+      spawnSync('rm', ['-rf', path.join(dshHome(), 'profiles', tempProfile)])
     }
   }
   process.exit(failed === 0 ? 0 : 1)

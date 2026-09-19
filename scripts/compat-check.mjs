@@ -37,9 +37,12 @@ const bridgeDeps = {
   zod: '^4.4.3',
 }
 
-// The two supported API generations. "legacy" is the exact pinned set the
-// 0.1.x-era devDependencies used; "projection" mirrors the repo devDependency
-// ranges (same ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh
+// The supported API generations. "legacy" is the exact pinned set the
+// 0.1.x-era devDependencies used; "projection" is the last generation that
+// still persists `assistant/chunk` (0.1.2-rc.1); "frames" and "framesNext" are
+// the two live lines that replaced it with the `agent/assistant-stream`
+// dispatch (0.1.3-alpha.2 removed it). Each mirrors the repo devDependency
+// ranges (the same ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh
 // resolution matches what a real profile boot heals.
 const GENERATIONS = {
   legacy: {
@@ -64,7 +67,7 @@ const GENERATIONS = {
     },
   },
   projection: {
-    label: '0.1.2-alpha.2+ (session-projection API)',
+    label: '0.1.2-rc.1 (session-projection API, last assistant/chunk generation)',
     deps: {
       '@deepseek-ai/cordis': '^4.0.2',
       '@deepseek-ai/cordis-plugin-include': '^1.0.7',
@@ -82,6 +85,48 @@ const GENERATIONS = {
       '@deepseek-ai/dsh-skill': '^0.1.2-rc.1',
       '@deepseek-ai/dsh-tools': '^0.1.2-rc.1',
       '@deepseek-ai/dsh-user-approval': '^0.1.2-alpha.2',
+    },
+  },
+  frames: {
+    label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
+    deps: {
+      '@deepseek-ai/cordis': '^4.0.2',
+      '@deepseek-ai/cordis-plugin-include': '^1.0.7',
+      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
+      '@deepseek-ai/dsh': '0.1.5-rc.2',
+      '@deepseek-ai/dsh-agent': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-agent-instructions': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-agent-presets': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-invariants': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-llm': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-mcp-client': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-permission-presets': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-session': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-session-query': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-skill': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-tools': '^0.1.5-rc.2',
+      '@deepseek-ai/dsh-user-approval': '^0.1.5-rc.2',
+    },
+  },
+  framesNext: {
+    label: '0.1.3-alpha.2+ (assistant-stream frames API, alpha line)',
+    deps: {
+      '@deepseek-ai/cordis': '^4.0.2',
+      '@deepseek-ai/cordis-plugin-include': '^1.0.7',
+      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
+      '@deepseek-ai/dsh': '0.1.6-alpha.2',
+      '@deepseek-ai/dsh-agent': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-agent-instructions': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-agent-presets': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-invariants': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-llm': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-mcp-client': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-permission-presets': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-session': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-session-query': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-skill': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-tools': '^0.1.6-alpha.2',
+      '@deepseek-ai/dsh-user-approval': '^0.1.6-alpha.2',
     },
   },
 }
@@ -121,5 +166,5 @@ for (const [name, generation] of Object.entries(GENERATIONS)) {
     rmSync(scratch, { recursive: true, force: true })
   }
 }
-console.log(failed === 0 ? '\nCOMPAT CHECK PASSED (both generations link clean)' : `\nCOMPAT CHECK FAILED (${failed} generation(s))`)
+console.log(failed === 0 ? `\nCOMPAT CHECK PASSED (${Object.keys(GENERATIONS).length} generations link clean)` : `\nCOMPAT CHECK FAILED (${failed} generation(s))`)
 process.exit(failed === 0 ? 0 : 1)

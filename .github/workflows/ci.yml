@@ -14,6 +14,11 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 24]
+        # Both harness API generations: 0.1.0-rc.6 still persists
+        # `assistant/chunk`, 0.1.5-rc.2 streams through `agent/assistant-stream`
+        # frames instead. The keyless smokes boot a real profile per CLI, so
+        # this covers link-time and boot-time compatibility on both.
+        dsh-version: ['0.1.0-rc.6', '0.1.5-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,11 +30,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/lib/host-service-row.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Package integrity (tarball contents)
         run: npm pack --dry-run
-      - name: Install dsh CLI
-        run: npm install -g @deepseek-ai/dsh@0.1.0-rc.6
+      - name: Install dsh CLI (${{ matrix.dsh-version }})
+        run: npm install -g @deepseek-ai/dsh@${{ matrix.dsh-version }}
       - name: Keyless boot smoke (initialize + session/new)
         run: node scripts/acp-smoke-keyless.mjs
       - name: MCP mount smoke (no model calls)

@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 /**
- * End-to-end check of the `assistant/message` fallback.
+ * End-to-end check of live streaming and the `assistant/message` fallback.
  *
- * Streaming is the live text path: `assistant/chunk` → `handleChunk` →
- * `agent_message_chunk`. A harness build may stop emitting those events
- * (0.1.6-alpha.2 emits only `assistant/message`, carrying the deltas in its
- * `stream` payload), and then the committed message is the only evidence of the
- * reply. Without the fallback the turn settles with usage reported and an empty
- * thread — this test drives a real session and fails in that case.
+ * The bridge has three tiers for delivering assistant text:
+ *   1. the `assistant/chunk` session event (harness ≤ 0.1.2-rc.1),
+ *   2. the `agent/assistant-stream` frames event that replaced it in
+ *      0.1.3-alpha.2,
+ *   3. the committed `assistant/message` fallback, which fires only when a step
+ *      put no text on the wire.
  *
- * It asserts the contract in both directions:
- *   - a two-marker reply arrives at all (the fallback fired), and
- *   - each marker arrives exactly once (a streaming host is not sent a
- *     duplicate when the fallback also runs).
+ * This test drives a real session twice over:
+ *   - it asserts a live seam actually fired (tier 1 or 2) by reading the
+ *     `ACP_DEBUG=1` stderr markers, so a silent regression to the fallback
+ *     fails instead of quietly passing, and
+ *   - it asserts a two-marker reply arrives exactly once, so the fallback can
+ *     never duplicate a reply a live seam already delivered.
  *
  * Spawns `dsh --profile acp-enhanced` (override with argv: `node
  * scripts/acp-message-fallback-test.mjs <command> <arg...>`), so run it wherever
  * that profile is linked — see scripts/init-acp-home.sh.
  *
- * Exits 0 only when the reply arrived exactly once.
+ * Exits 0 only when a live seam fired and the reply arrived exactly once.
  */
 import { spawn } from 'node:child_process'
 import readline from 'node:readline'
@@ -30,9 +32,15 @@ const FIRST = 'FALLBACK-ALPHA'
 const SECOND = 'FALLBACK-OMEGA'
 const TIMEOUT_MS = 180_000
 
-const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'inherit'] })
+// ACP_DEBUG makes the bridge narrate every session event / frame on stderr;
+// capture it so the live-seam assertion below can see which tier delivered.
+const child = spawn(cmd, args, {
+  stdio: ['pipe', 'pipe', 'pipe'],
+  env: { ...process.env, ACP_DEBUG: '1' },
+})
 const pending = new Map()
 const chunks = []
+const seams = { frames: 0, legacy: 0 }
 let seq = 0
 let failed = 0
 
@@ -88,6 +96,14 @@ readline.createInterface({ input: child.stdout }).on('line', (line) => {
   }
 })
 
+// Live-seam markers, emitted by the bridge under ACP_DEBUG. The frames seam
+// logs `agent/assistant-stream frame=chunk …`; the legacy seam logs
+// `assistant/chunk turn=… step=… chunkType=…`.
+readline.createInterface({ input: child.stderr }).on('line', (line) => {
+  if (line.includes('agent/assistant-stream frame=chunk')) seams.frames += 1
+  else if (/\[acp-debug\] assistant\/chunk turn=/.test(line)) seams.legacy += 1
+})
+
 const initialized = await send('initialize', { protocolVersion: 1, clientCapabilities: {} })
 check('initialize succeeds', initialized.result !== undefined, initialized.error ? JSON.stringify(initialized.error) : '')
 
@@ -121,6 +137,8 @@ const second = count(SECOND)
 
 console.log(`CHUNKS: ${chunks.length}`)
 console.log(`TEXT: ${JSON.stringify(text)}`)
+check('a live streaming seam fired (frames or legacy)', seams.frames + seams.legacy > 0,
+  `frames=${seams.frames}, legacy=${seams.legacy}`)
 check('the reply reached the client', first > 0 && second > 0, `text=${JSON.stringify(text.slice(0, 120))}`)
 check('the reply reached it exactly once', first === 1 && second === 1,
   `${FIRST}×${first}, ${SECOND}×${second}`)
