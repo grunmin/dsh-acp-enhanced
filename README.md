@@ -335,12 +335,33 @@ dsh --profile acp-enhanced --dump-config   # where each row comes from
 ## Compatibility
 
 One bridge binary, one harness API line: **dsh ≥ 0.1.5-rc.2** (peer range
-`^0.1.5-rc.1 || ^0.1.6-alpha.1`) — boot-verified against the pinned 0.1.5-rc.2 CLI and
-link-verified against 0.1.6-alpha.2. The bridge consumes only the harness's **declared**
-surface: services in `docs/capability-seams.md`, events in
-`docs/event-producer-consumer.md`, published package exports. `scripts/api-surface-check.mjs`
-fails on anything else (`npm run check:surface`, a blocking CI step), and there is no
-runtime generation probing left — no version flags, no duck-typed service shapes.
+`^0.1.5-rc.1 || ^0.1.6-alpha.1`). Both lines in that range are **boot-verified** —
+handshake, profile settle and a real `session/new` — on every CI run, plus a cross-generation
+link check. The bridge consumes only the harness's **declared** surface: services in
+`docs/capability-seams.md`, events in `docs/event-producer-consumer.md`, published package
+exports. `scripts/api-surface-check.mjs` fails on anything else (`npm run check:surface`, a
+blocking CI step), and there is no runtime generation probing left — no version flags, no
+duck-typed service shapes.
+
+### Support policy
+
+| Bridge | Supported dsh lines | What changed |
+|---|---|---|
+| **0.9.x** | `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
+| 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1` (unreleased) | 0.1.3+ live-stream seam; 0.1.5 persistence handle API |
+| 0.7.x and older | ≤ 0.1.2-rc.1 | runtime probing of both generations |
+
+The rules behind that table:
+
+- **A new dsh API line gets a new bridge release, not a wider runtime probe.** Probing is how
+  0.7.x absorbed 0.1.1 → 0.1.5, and it is why that support rotted silently.
+- **The floor moves only with a bridge minor, and never silently**: the launcher warns before
+  booting a CLI below the range, and the doctor stops with `RESULT FAIL — CLI too old`.
+- **A line is dropped by publishing a bridge that says so**; the previous line stays on the
+  `feat/dsh-0.1.3-plus-support` branch for users who cannot move.
+- **Watch the next line before it is released**: the scheduled `canary` workflow installs the
+  `alpha` dist-tag and runs the guard, the link check and a boot smoke, so a breaking change
+  shows up as a red canary rather than as user breakage.
 
 ### What 0.9.0 changed (breaking)
 
@@ -385,6 +406,13 @@ Checklist:
 
 `$DSH_HOME/profiles/node_modules` is a single dependency closure shared by every profile
 under that home, and dsh heals it to whichever CLI booted last. So:
+
+> This is **0.1.5-line behaviour**. On 0.1.6-alpha.2 that shared closure no longer exists at
+> all (the harness resolves from the CLI's own install; the profile's `node_modules` holds
+> only out-of-tree plugins), which is why the launcher's drift check is line-specific and
+> silently no-ops where the path is gone.
+
+
 
 - **Never run two CLI generations under one home at once.** The second boot flips the
   closure under the first process, which then lazily resolves mismatched modules

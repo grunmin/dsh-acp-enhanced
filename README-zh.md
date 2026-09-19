@@ -286,11 +286,30 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 ## 兼容性
 
 同一个桥只对应**一条** harness API 线：**dsh ≥ 0.1.5-rc.2**（peer 范围
-`^0.1.5-rc.1 || ^0.1.6-alpha.1`）——在锁定的 0.1.5-rc.2 CLI 上做过真实启动验证，在
-0.1.6-alpha.2 上做过链接验证。桥只消费 harness **已声明**的表面：
+`^0.1.5-rc.1 || ^0.1.6-alpha.1`）。该范围内的**两条线**每次 CI 都会做真实启动验证——握手、
+profile settle 与真实 `session/new`——另有跨代链接检查。桥只消费 harness **已声明**的表面：
 `docs/capability-seams.md` 里的服务、`docs/event-producer-consumer.md` 里的事件、以及已发布包的导出。
 `scripts/api-surface-check.mjs` 会对其他一切报错（`npm run check:surface`，CI 的阻塞步骤），
 运行期也不再有任何代际探测——没有版本开关，没有鸭子类型探测服务形状。
+
+### 支持策略
+
+| 桥版本 | 支持的 dsh 线 | 变化 |
+|---|---|---|
+| **0.9.x** | `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1` | 只消费已声明表面；下限 0.1.5-rc.2；移除 `session/delete` |
+| 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1`（未发布） | 0.1.3+ 实时 seam；0.1.5 持久化 handle API |
+| 0.7.x 及更早 | ≤ 0.1.2-rc.1 | 运行期同时探测两代 |
+
+这张表背后的规则：
+
+- **新的 dsh API 线对应一次新的桥发布，而不是把运行期探测写得更宽。** 0.7.x 正是靠探测吞下
+  0.1.1 → 0.1.5，也正是它悄悄腐烂的原因。
+- **下限只随桥的 minor 移动，且绝不静默**：CLI 低于范围时启动器会在启动前告警，doctor 会以
+  `RESULT FAIL — CLI too old` 停下。
+- **放弃某条线的方式是发布一个明确这么说的桥**；旧线留在 `feat/dsh-0.1.3-plus-support` 分支上，
+  供无法迁移的用户使用。
+- **在下一条线发布之前就盯住它**：定时 `canary` workflow 会安装 `alpha` dist-tag 并跑表面守卫、
+  链接检查与启动冒烟，因此破坏性变更表现为 canary 变红，而不是用户侧故障。
 
 ### 0.9.0 的破坏性变更
 
@@ -331,6 +350,12 @@ npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥�
 
 `$DSH_HOME/profiles/node_modules` 是同 home 下所有 profile 共享的**同一个**依赖闭包，
 dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
+
+> 这是 **0.1.5 线**的行为。到 0.1.6-alpha.2，这个共享闭包已完全不存在（harness 从 CLI 自身
+> 的安装位置解析；profile 的 `node_modules` 只放外部插件），所以启动器的漂移检查是「按线」的，
+> 路径消失时会静默跳过。
+
+
 
 - **不要让两个 CLI 代际同时跑在一个 home 下。** 第二次启动会在第一个进程运行期间翻转闭包，
   那个进程随后会惰性地解析到不匹配的模块。启动器会把闭包里的 `dsh-agent` 版本与即将启动的

@@ -14,12 +14,12 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 24]
-        # One harness API line is supported: floor 0.1.5-rc.2, which streams
-        # through the `agent/assistant-stream` frames event and exposes the
-        # handle-based session persistence. The keyless smokes boot a real
-        # profile per CLI, so this covers link-time and boot-time compatibility
-        # (scripts/compat-check.mjs additionally links against 0.1.6-alpha.2).
-        dsh-version: ['0.1.5-rc.2']
+        # Both lines the peer range claims: the pin (0.1.5-rc.2) and the 0.1.6
+        # alpha line. Every job below boots a real profile, so a green run is
+        # boot-time verification of the support claim — the old matrix only
+        # link-checked 0.1.6-alpha.2 through scripts/compat-check.mjs.
+        # `.github/workflows/canary.yml` watches the line after these.
+        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

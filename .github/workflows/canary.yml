@@ -1,0 +1,58 @@
+name: canary (next dsh line)
+
+# Early warning for harness breaking changes. The `alpha` dist-tag carries the
+# line after the pinned one (`alpha` = 0.1.6-alpha.2 while `latest`/`next` =
+# 0.1.5-rc.2), so an upstream break shows up here — red, in the open — instead of
+# as user breakage after a release.
+#
+# Reading the result:
+#   green → the bridge still works on that line; widen the peer range when the
+#           line is promoted (and pin it in ci.yml's matrix)
+#   red   → adapt the bridge (or narrow the range) BEFORE that line reaches
+#           `latest`; the job log names the failing layer
+#
+# Scheduled and manual only: never a required check on a pull request, and never
+# a release gate — a canary is allowed to be red while we catch up.
+on:
+  schedule:
+    - cron: '17 3 * * 1' # Mondays, 03:17 UTC
+  workflow_dispatch:
+
+jobs:
+  next-line:
+    runs-on: ubuntu-latest
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Public-surface guard (declared harness API only)
+        run: node scripts/api-surface-check.mjs
+      - name: Install the canary CLI
+        run: |
+          npm install -g @deepseek-ai/dsh@alpha
+          {
+            echo "### canary: dsh $(dsh --version)"
+            echo ""
+            echo "bridge $(node -p "require('./package.json').version") vs peer range $(node -p "require('./package.json').peerDependencies['@deepseek-ai/dsh-agent']")"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keyless boot smoke (initialize + session/new)
+        run: node scripts/acp-smoke-keyless.mjs
+      - name: MCP mount smoke (no model calls)
+        run: node scripts/acp-mcp-test.mjs
+      - name: doctor on the canary line
+        run: |
+          dsh plugin --profile canary add "link:$PWD"
+          node scripts/acp-doctor.mjs --profile canary
+      - name: assistant/message fallback e2e (requires DEEPSEEK_API_KEY)
+        if: ${{ env.DEEPSEEK_API_KEY != '' }}
+        run: |
+          dsh plugin --profile canary-fallback add "link:$PWD"
+          node scripts/acp-message-fallback-test.mjs dsh --profile canary-fallback

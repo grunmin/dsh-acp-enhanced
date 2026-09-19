@@ -436,3 +436,75 @@ Two extra checks were added in the same breath:
 `scripts/acp-launcher-test.mjs` grew to 30 checks, covering the too-old warning
 (warn, never block; stdout untouched), the duplicate-row warning and its
 comment false-positive, and the `~/.dsh-acp` migration hint.
+
+## 14. Upgrade-adaptation practice: upstream, ecosystem, and us (research, session 3)
+
+The maintainer asked whether our upgrade-adaptation practice matches the
+recommended one, given that dsh has broken and will keep breaking. Researched
+against the public upstream repository (`deepseek-ai/deepseek-harness`:
+`docs/architecture.md`, `docs/capability-seams.md`, `docs/cookbook/*`), the
+shipped official packages, and published third-party plugins.
+
+### What upstream does
+
+| Mechanism | Evidence | Meaning for an out-of-tree bundle |
+| --- | --- | --- |
+| **Lockstep versions: one release per CLI line** | `dsh-base`, `dsh-web-app`, `dsh-headless`, `dsh-acp`, `dsh-acp-app` are all `0.1.5-rc.2` — equal to the CLI — with their `@deepseek-ai/dsh-*` deps at `^0.1.5-rc.2` | upstream never supports two generations at once; it ships a build per line |
+| **Workspace invariant: package `version` matches the root** | `docs/cookbook/adding-a-package.md:25` | in-tree packages cannot drift; only out-of-tree plugins need ranges |
+| **Everything is a plugin; extend by mounting beside it** | `docs/architecture.md:11-13` | a third-party bundle replacing an official row (our case) is the intended shape |
+| **Profiles hold out-of-tree plugins; patches target rows by id** | `docs/architecture.md:19,23,27` | `dsh.profile.bundles` + `dsh.bundle.patch` are the sanctioned packaging |
+| **Host rows belong to app bundles** | `dsh-web-app/cordis.patch.yml:47` inserts `subagent-model-selection-settings`; this repo now does the same | a bundle ships the rows its composition needs |
+| **A custom ACP profile may replace the ACP row** | `dsh-acp-app/README.md:61` | our existence is a supported configuration, not a hack |
+| **ACP profiles use startup-only patches** | `dsh-acp-app/README.md:63` | profile edits take effect on the next process — matches our docs |
+| **No shim for a removed private surface** | `docs/architecture.md:49`: "The removed private direct-config carrier has no compatibility bin or fallback parser" | upstream does not carry dead private surfaces — the stance P2 adopted |
+| **Per-package documented surface** | `dsh-acp/README.md:64` (per-method `Stable …` table) + `Known Limitations` sections | documenting the supported surface is the convention |
+
+### What the ecosystem does
+
+Both published plugins checked declare long OR-chains that are already stale:
+
+- `dsh-free-search@0.4.32`: `^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2 || ^0.1.3-alpha.2 || ^0.1.5-alpha.1`
+  — it lists neither `0.1.5-rc.2` nor `0.1.6-alpha.2`, yet boots, mounts and configures
+  `web.searchProvider` on both (§12).
+- `dsh-mnemon@0.5.11`: skips the 0.1.3/0.1.4 lines entirely, stops at `0.1.5-rc.1`.
+
+So the community norm is a best-effort OR-chain plus runtime tolerance, with declared
+ranges that are neither enforced nor reliable — the pattern P2 deliberately deleted here.
+
+### Conformance
+
+| Practice | Us | Verdict |
+| --- | --- | --- |
+| declared-surface-only, machine-enforced | `api-surface-check.mjs` + `public-surface.json`, blocking CI | **stronger than upstream requires** |
+| peer ranges mirroring the CLI's ranges; devDeps pinned in the same range | `package.json`, 14 peers | matches the upstream invariant |
+| one release per API line, no cross-generation tolerance | 0.9.x ↔ `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1`; 0.7.x was the probing generation | matches upstream's lockstep discipline |
+| per-line verification | `compat-check.mjs` (link) + CI boot matrix, now **both** lines | matches upstream's Node-version matrix idea |
+| loud, classified failure | launcher translation + `acp-doctor.mjs` (three layers) | **beyond upstream** (no third-party equivalent) |
+| migration tooling | `init-acp-home.sh` retires legacy rows; doctor names duplicates; README checklist | **beyond the community norm** |
+| early warning for the next line | `.github/workflows/canary.yml`, scheduled on the `alpha` dist-tag | added here |
+| stated support policy | README (en+zh) "Support policy" table + four rules | was missing; added here |
+
+### Gaps found, and closed in the same session
+
+1. the compatibility section claimed 0.1.6-alpha.2 was covered while the CI matrix booted only
+   0.1.5-rc.2. The alpha line was boot-verified by hand first, then added to the matrix, so the
+   claim is now continuously true rather than aspirational.
+2. no early warning for a coming line → `canary.yml` (scheduled + manual; `alpha` dist-tag;
+   green means "still works, widen the range when promoted", red means "adapt before release").
+3. no stated support policy → README table mapping bridge versions to dsh lines, plus the rules
+   (a new line gets a release, not a wider probe; the floor moves only with a bridge minor and
+   never silently; a line is dropped by publishing a bridge that says so).
+4. "One CLI generation per home" described 0.1.5 behaviour as general. On 0.1.6-alpha.2
+   `$DSH_HOME/profiles/node_modules` does not exist at all: the home holds
+   `profiles/<name>/node_modules` with only the linked out-of-tree bundle, and nothing resolves
+   `dsh-agent` under the home. Annotated in both READMEs; the launcher's drift check silently
+   no-ops where that path is gone, so it cannot false-alarm.
+
+### Evidence for this section (all run locally)
+
+| Check | Result |
+| --- | --- |
+| bridge 0.9.0 on dsh **0.1.6-alpha.2** (scratch home, real CLI) | doctor `READY` — handshake, settle and a real `session/new` that opened a thread |
+| keyless smoke on 0.1.6-alpha.2 | ALL CHECKS PASSED (same job the widened matrix runs) |
+| MCP mount smoke on 0.1.6-alpha.2 | ALL CHECKS PASSED |
+| `dsh-free-search@0.4.32` peers vs. reality | declared range excludes both lines we support; it mounts and configures `web.searchProvider` on them anyway |
