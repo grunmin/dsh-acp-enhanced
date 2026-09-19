@@ -61,8 +61,9 @@ ACP 线上。
 
 ### 会话
 
-- **恢复与归档**：`session/load` 恢复历史线程（完整回放）；`session/list` /
-  `session/delete` 管理线程归档（带标题、按更新时间排序）；标题实时推送
+- **恢复与归档**：`session/load` 恢复历史线程（完整回放）；`session/list` 列出线程
+  归档（带标题、按更新时间排序）；标题实时推送。`session/delete` **有意不广播**——
+  harness 未声明公开的持久化删除接口（见「兼容性」）
 - **多根工作区**：`sessionCapabilities.additionalDirectories` 已声明，Zed 不再提示
   "This agent doesn't currently support multi-root workspaces"，而是把所有工作区根
   通过 `session/new` / `session/load` 传入。所有根都会写进系统提示词并在
@@ -93,6 +94,9 @@ ACP 线上。
 <img src="assets/screenshots/tool-cards-elicitation.png" width="560">
 
 ## 快速开始
+
+**需要 `dsh ≥ 0.1.5-rc.2`**（`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`）：本桥只对应
+一条已声明的 harness API 线，不在运行期探测更老的代际。
 
 本包遵循 dsh 官方插件规范（声明了 `dsh.bundle`），安装与官方组合包一致：**一条命令**
 完成，自动初始化 profile、安装包、追加 bundle 层，全程无需手写 profile YAML。
@@ -281,55 +285,66 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 
 ## 兼容性
 
-同一个桥可运行在 **0.1.0-rc.6** 至 **0.1.6-alpha.2** 的每一代 harness 上。有两代重写了本桥消费的
-API——0.1.2 线（session projection）与 0.1.3 线（实时流式）——桥在运行期同时吸收各代：不分叉、不加版本开关：
+同一个桥只对应**一条** harness API 线：**dsh ≥ 0.1.5-rc.2**（peer 范围
+`^0.1.5-rc.1 || ^0.1.6-alpha.1`）——在锁定的 0.1.5-rc.2 CLI 上做过真实启动验证，在
+0.1.6-alpha.2 上做过链接验证。桥只消费 harness **已声明**的表面：
+`docs/capability-seams.md` 里的服务、`docs/event-producer-consumer.md` 里的事件、以及已发布包的导出。
+`scripts/api-surface-check.mjs` 会对其他一切报错（`npm run check:surface`，CI 的阻塞步骤），
+运行期也不再有任何代际探测——没有版本开关，没有鸭子类型探测服务形状。
 
-| API | ≤ 0.1.1-rc.2（旧代） | ≥ 0.1.2-alpha.2（projection 代） | 桥的做法 |
-|---|---|---|---|
-| 会话的运行中 preset | `resolveSessionPreset({header, events})` 导出 | 导出已移除；`agentPreset` session projection | 自行折叠事件日志（最后一个 `agent-preset/selected` 胜出、header 兜底）——两代语义一致 |
-| preset 解析失败 | `UnknownPresetError` / `PresetMountError` | `RemoteError`，错误码 `agent-preset/*` | `isPresetClientError`：RemoteError 按 `isDSHRemoteError` + `code` 鸭子类型识别；旧类按 `presetId` 结构识别（绝不跨副本 `instanceof`） |
-| `permissionPresets.current(x)` | `current(events)` | `current(session)`（经 `permissionState`） | `currentPermissionMode` 每次调用前探测服务实例 |
-| 会话事件日志读取 | 同步 `session.events` 数组 | `session.events` 已移除（0.1.2-rc.1）；改为 `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf`：有 `snapshotEvents()` 用之，否则用活数组 |
-| 注册表 `execute` 签名 | `execute(agent, line, signal)` | `execute(agent, line, images, signal)`（images 插在 line 与 signal 之间，0.1.1-rc.1 起） | `executeRegistryCommand` 按声明参数个数探测（`Remote` 装饰器不包裹方法） |
-| `userQuestions` 注册 | `registerProvider({ask})` | `user-questions/request` Cordis waterfall（0.1.2-alpha.2 起） | 探测服务实例；waterfall 监听只应答本桥会话、其余经 `next()` 传递 |
-| 助手实时流式 | `assistant/chunk` 会话事件（≤ 0.1.2-rc.1） | 0.1.3-alpha.2 起移除；改为 `agent/assistant-stream` 的 agent 作用域帧（`start`/`chunk`/`end`，`frame.chunk` 仍是同一套 `StreamChunk`） | 两条 seam 共用同一个 `handleChunk`；每个 step 有闩锁，两 seam 同发的宿主不会重复流式；什么都没流的宿主由已提交的 `assistant/message` 兜底 |
-| 会话持久化读取 | `list()` → `SessionHeader[]`；`load(id)` → `{meta, events}`；标题走 `readRaw(id)`（≤ 0.1.2-rc.1） | 0.1.5 换掉了整层接口：`list()` → `{header, revision, sizeBytes?}[]`、`stat(id)`、`open(id, 'read')` → handle（`header` + `read()`）；`load`/`readRaw` 已移除 | `storedSessionHeaders` 有 `entry.header` 就解包；`loadStoredSession` 走 `load` 或 handle；`readStoredTitle` 保留 raw artifact 快路径，否则用 `stat().sizeBytes` 给 handle 读取设上限；`session/delete` 对仅 JSONL 提供的 `locate` 做了保护 |
+### 0.9.0 的破坏性变更
 
-两条不变量保证其安全性（openma 的 `deepseek-harness-acp` 适配器独立得出了同样结论）：**只值导入纯
-helper**（`createUserMessage`、`ReasoningEffortId`、`SessionId`、`defineTool`…… 外来副本功能等价）；**服务的代际问题按服务实例探测回答**——决定服务代际的是启动它的 CLI，不是本包的依赖范围。`dsh-agent-presets`
-按 *命名空间* 导入：0.1.2-alpha.1 删除了其命名导出，命名导入会在 ESM 链接期直接失败。
+| 变更 | 影响 | 中招了怎么办 |
+|---|---|---|
+| 下限提升到 dsh **≥ 0.1.5-rc.2** | 更老的宿主在挂载期就以具名错误失败，而不是静默降级 | 升级 CLI（`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`），或留在 `feat/dsh-0.1.3-plus-support` 分支（≤ 0.1.2-rc.1） |
+| **移除 `session/delete`** | 不再广播该能力，也永不删除已持久化的会话——harness 未声明公开的持久化删除接口 | 文件仍在 `$DSH_HOME/sessions/<slug>/<id>/`，确有需要请手工删除。上游已有 issue 追踪公开删除 API |
+| 启动器**不再改写 `DSH_HOME`** | ACP profile 在启动器所处的 home 中启动（`${DSH_HOME:-$HOME/.dsh}`），与 `dsh web` 共享凭据、设置、会话与 preset | 之前用的是隐式隔离的 `~/.dsh-acp`？在 Zed 的 `agent_servers.env` 里显式指回它（`"DSH_HOME": "<home>/.dsh-acp"`），或迁回共享 home |
+| `assistant/chunk` seam 移除 | 实时流只剩 `agent/assistant-stream`（下限已覆盖该代） | 升级 CLI；完全不发流的宿主仍由已提交的 `assistant/message` 兜底 |
 
-从干净依赖树校验每一代：
+### 一个 home 只跑一个 CLI 代际
+
+`$DSH_HOME/profiles/node_modules` 是同 home 下所有 profile 共享的**同一个**依赖闭包，
+dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
+
+- **不要让两个 CLI 代际同时跑在一个 home 下。** 第二次启动会在第一个进程运行期间翻转闭包，
+  那个进程随后会惰性地解析到不匹配的模块。启动器会把闭包里的 `dsh-agent` 版本与即将启动的
+  CLI 对比，不一致时向 **stderr** 告警——遇到这种启动后，请重启该 home 下其他 dsh 进程
+  （`dsh web` 等）。
+- **逃生阀是 CLI，不是 home。** 用 `DSH_PATH=<dsh>`（或下面的仓库锁定）指定启动哪个 dsh：
+  启动器只决定*用哪个 dsh*，绝不决定*用哪个 home*。
+
+当前解析结果随时可查：
 
 ```sh
-node scripts/compat-check.mjs   # 分别安装 0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 四套，逐一导入本桥
+node scripts/compat-check.mjs   # 分别安装 0.1.5-rc.2 与 0.1.6-alpha.2 两套，逐一导入本桥
+node scripts/acp-doctor.mjs     # CLI 与闭包版本、bundle 列表，并真实启动一次
 ```
 
-### 开发检出：仓库锁定 CLI + 独立 home
+### 开发检出：仓库锁定 CLI + 共享 home
 
 启动器**从检出目录**（`link:` 安装）运行时，按以下顺序解析 dsh CLI：
 
 1. `$DSH_PATH` —— 显式指定的 dsh 二进制，或其 `node_modules/.bin/dsh` 内含 dsh 的目录
 2. 仓库锁定的 CLI —— `<repo>/node_modules/.bin/dsh`（本包的 `@deepseek-ai/dsh`
    devDependency，当前 0.1.5-rc.2）
-3. 全局兜底 —— PATH / npx 缓存 / npm 前缀 里的 `dsh`（旧行为；未 `pnpm install` 的全新检出退化为它）
+3. 全局兜底 —— PATH / npx 缓存 / npm 前缀 里的 `dsh`（未 `pnpm install` 的全新检出退化为它）
 
-命中 (1) 或 (2) 时，profile 在**独立 home**（`DSH_ACP_HOME`，默认 `~/.dsh-acp`）下启动：dsh
-每次启动都会把自身依赖闭包 heal 进 `$DSH_HOME/profiles/node_modules`——该目录被同 home 下所有
-profile 共享、内容随最后启动的 CLI 翻转——因此第二个 CLI 代际不得与运行中的 `dsh web`
-等共享 home。此路径永不触碰默认 home。harness 注入到子进程的 `DSH_HOME=$HOME/.dsh`
-（dsh 会向每个 agent/工具进程导出它）会被识别并覆盖而非沿用；只有指向默认 home 之外的
-`DSH_HOME` 才被尊重；确要将锁定 CLI 跑在默认 home 上，请显式设 `DSH_ACP_HOME=$HOME/.dsh`。
-
-一次性引导独立 home（建**不含** `dsh-mnemon` 的 profile——它不支持 0.1.2-alpha+ harness——并逐字移植旧
-profile 的用户层行、迁移凭据/设置、挂 0.1.2-alpha+ `standard` preset 所需的
-`subagent-model-selection-settings` 宿主服务、关闭 DeepSeek 插件清单上报）：
+命中任何一个，profile `acp-enhanced` 都在**启动器所处的 home**（`${DSH_HOME:-$HOME/.dsh}`）中启动。
+home 永不被改写。若想让桥跑在自己的依赖闭包上，请另建一个 home 并显式指过去：
 
 ```sh
-scripts/init-acp-home.sh            # 幂等；重跑不会覆盖你的文件
+DSH_ACP_HOME=~/.dsh-acp scripts/init-acp-home.sh   # 可选、幂等：创建并填充一个独立 home
+# 然后在 Zed 的 agent_servers env 里：  "DSH_HOME": "/Users/you/.dsh-acp"
 ```
 
-两代 harness 都把会话持久化在 `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`，且新代可读旧代日志（已验证：历史回放与 preset 折叠跨代工作）。因此旧线程只需把会话历史拷到新 home——`scripts/init-acp-home.sh` 会打印这条命令（或加 `--copy-sessions`）；默认不拷贝，因为默认 home 的目录里还有全部 web profile 会话。
+独立 home 是明确的可选项，不是默认值：profile 必须存在于启动器实际使用的 home 里，否则启动器
+会以 127 退出，并打印出创建它的那条 `dsh plugin … add link:` 命令。`init-acp-home.sh` 会逐字移植旧
+profile 的用户层行、复制凭据/设置、补上 `standard` preset 所需的
+`subagent-model-selection-settings` 宿主服务，并关闭 DeepSeek 插件清单上报。
+
+两种 home 都把会话持久化在 `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`；默认不在 home 之间
+拷贝任何东西，因为默认 home 的目录里还有全部 web profile 会话。迁移既有环境时请加
+`--copy-sessions`（或直接执行脚本打印的 `rsync`）。
 
 ## 故障排查
 
@@ -371,7 +386,8 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 
 ```sh
 pnpm install                          # 安装开发依赖（仓库锁定 CLI 与测试脚本）
-node scripts/compat-check.mjs         # 跨代链接检查（0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 临时安装）
+node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.5-rc.2 / 0.1.6-alpha.2 临时安装）
+npm run check:surface                 # 公开表面守卫：不得使用未声明的 harness API（CI 阻塞步骤）
 node scripts/acp-client.mjs           # 端到端冒烟（需要 API key）
 node scripts/acp-client-tools.mjs     # 客户端工具测试（模拟 Zed 的 fs/terminal/elicitation/plan）
 node scripts/acp-mcp-test.mjs         # MCP 挂载测试（无模型调用）
@@ -404,7 +420,8 @@ undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspac
 可切换为逐 token 流式，见「特性」）、每会话同时一个 in-flight prompt。MCP 支持 stdio
 与 streamable HTTP（不声明 legacy SSE / `acp` 传输）。
 `session/close` / `session/fork` / `session/resume` 未实现（不声明能力，合规客户端
-不会调用）；`session/delete` 因 dsh 持久化无官方删除 API，采用直接删除后端目录的方式。
+不会调用）。`session/delete` 同样不广播：harness 未声明公开的持久化删除接口，因此本桥
+永不删除已持久化的会话（见「兼容性」）。
 
 多根工作区已声明、模型可见所有根，但 dsh 沙箱策略每会话只解析**一个可写根**（主
 `cwd`，即 `session.header.cwd`），本地沙箱也只为该根开放写权限。读操作在所有根均可

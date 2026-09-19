@@ -71,9 +71,10 @@ over the ACP wire.
 
 ### Sessions
 
-- **Resume & archive**: `session/load` restores past threads (full replay);
-  `session/list` / `session/delete` manage the thread archive (titled, sorted by last
-  activity); live title updates
+- **Resume & archive**: `session/load` restores past threads (full replay); `session/list`
+  lists the thread archive (titled, sorted by last activity); live title updates.
+  `session/delete` is deliberately **not** advertised — the harness declares no public
+  persistence delete (see [Compatibility](#compatibility))
 - **Multi-root workspaces**: `sessionCapabilities.additionalDirectories` is advertised,
   so Zed no longer shows "this agent doesn't currently support multi-root workspaces"
   and instead passes every workspace root on `session/new` / `session/load`. All roots
@@ -108,6 +109,9 @@ After picking **dsh-acp-enhanced** in Zed's AI Agent panel:
 <img src="assets/screenshots/tool-cards-elicitation.png" width="560">
 
 ## Quick start
+
+**Requires `dsh ≥ 0.1.5-rc.2`** (`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`); the bridge
+targets one declared harness API line and does not probe older generations at runtime.
 
 This package follows the official dsh plugin conventions (it declares `dsh.bundle`), so
 installation matches any official bundle: **one command** — auto-initializes the profile,
@@ -330,37 +334,44 @@ dsh --profile acp-enhanced --dump-config   # where each row comes from
 
 ## Compatibility
 
-One bridge binary runs against every harness generation from **0.1.0-rc.6** through
-**0.1.6-alpha.2**. Two generations rewrote APIs this bridge consumes — the 0.1.2 line
-(session projections) and the 0.1.3 line (live streaming) — and the bridge absorbs every
-generation at runtime — no fork, no version flag:
+One bridge binary, one harness API line: **dsh ≥ 0.1.5-rc.2** (peer range
+`^0.1.5-rc.1 || ^0.1.6-alpha.1`) — boot-verified against the pinned 0.1.5-rc.2 CLI and
+link-verified against 0.1.6-alpha.2. The bridge consumes only the harness's **declared**
+surface: services in `docs/capability-seams.md`, events in
+`docs/event-producer-consumer.md`, published package exports. `scripts/api-surface-check.mjs`
+fails on anything else (`npm run check:surface`, a blocking CI step), and there is no
+runtime generation probing left — no version flags, no duck-typed service shapes.
 
-| API | ≤ 0.1.1-rc.2 (legacy) | ≥ 0.1.2-alpha.2 (projection) | Bridge behavior |
-|---|---|---|---|
-| running preset of a session | `resolveSessionPreset({header, events})` export | export removed; `agentPreset` session projection | folds the log itself (last `agent-preset/selected` wins, header fallback) — identical semantics in both |
-| preset resolution failure | `UnknownPresetError` / `PresetMountError` | `RemoteError`, codes `agent-preset/*` | `isPresetClientError`: RemoteError duck-typed by `isDSHRemoteError` + `code`, legacy classes identified structurally by `presetId` (never cross-copy `instanceof`) |
-| `permissionPresets.current(x)` | `current(events)` | `current(session)` (via `permissionState`) | `currentPermissionMode` probes the service instance per call |
-| session event log reads | synchronous `session.events` array | `session.events` removed (0.1.2-rc.1); `snapshotEvents()` / `ownEvents()` / `eventAt()` | `sessionEventsOf` reads `snapshotEvents()` when present, the live array otherwise |
-| registry `execute` signature | `execute(agent, line, signal)` | `execute(agent, line, images, signal)` (images between line and signal, 0.1.1-rc.1+) | `executeRegistryCommand` probes the declared arity (the `Remote` decorator never wraps the method) |
-| `userQuestions` registration | `registerProvider({ask})` | `user-questions/request` Cordis waterfall (0.1.2-alpha.2+) | probes the service instance; waterfall listener answers bridge-owned requests and delegates via `next()` |
-| live assistant streaming | `assistant/chunk` session event (≤ 0.1.2-rc.1) | removed in 0.1.3-alpha.2; `agent/assistant-stream` agent-scoped frames (`start`/`chunk`/`end`, each `frame.chunk` the same `StreamChunk`) | both seams feed the one `handleChunk`; a per-step latch keeps a host carrying both from streaming twice, and a host that streams nothing is covered by the committed `assistant/message` fallback |
-| session persistence reads | `list()` → `SessionHeader[]`; `load(id)` → `{meta, events}`; `readRaw(id)` for stored titles (≤ 0.1.2-rc.1) | 0.1.5 replaced the surface: `list()` → `{header, revision, sizeBytes?}[]`, `stat(id)`, `open(id, 'read')` → handle (`header` + `read()`); `load`/`readRaw` removed | `storedSessionHeaders` unwraps `entry.header` when present; `loadStoredSession` uses `load` or the handle; `readStoredTitle` keeps the raw-artifact fast path and otherwise bounds the handle read with `stat().sizeBytes`; `session/delete` guards the JSONL-only `locate` |
+### What 0.9.0 changed (breaking)
 
-Two invariants make this safe (same conclusions the openma `deepseek-harness-acp` adapter
-reached independently): **value-import pure helpers only** (`createUserMessage`,
-`ReasoningEffortId`, `SessionId`, `defineTool`, … — a foreign copy is functionally
-equivalent), and **service-generation questions are answered by probing the service
-instance**, because the booting CLI — not this package's dependency range — decides the
-service generation. `dsh-agent-presets` is imported as a *namespace*: 0.1.2-alpha.1
-removed its named exports, and a named import would fail at ESM link time.
+| Change | Effect | If it bites |
+|---|---|---|
+| floor raised to dsh **≥ 0.1.5-rc.2** | older hosts fail at mount time with a named error instead of degrading silently | upgrade the CLI (`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`), or stay on the `feat/dsh-0.1.3-plus-support` branch for ≤ 0.1.2-rc.1 |
+| **`session/delete` removed** | the ACP capability is no longer advertised and persisted sessions are never deleted — the harness declares no public persistence delete | the files stay under `$DSH_HOME/sessions/<slug>/<id>/`; remove them by hand if you must. An upstream issue tracks a public delete API |
+| the launcher **no longer rewrites `DSH_HOME`** | the ACP profile boots inside the home the launcher was started with (`${DSH_HOME:-$HOME/.dsh}`), sharing credentials, settings, sessions and presets with `dsh web` | used the old implicit `~/.dsh-acp`? Point the launcher at it explicitly (`"DSH_HOME": "<home>/.dsh-acp"` in Zed's `agent_servers.env`) or migrate back to the shared home |
+| the `assistant/chunk` seam is gone | live streaming is `agent/assistant-stream` only (the floor carries it) | upgrade the CLI; a host that streams nothing is still covered by the committed `assistant/message` fallback |
 
-Check every generation from a clean tree:
+### One CLI generation per home
+
+`$DSH_HOME/profiles/node_modules` is a single dependency closure shared by every profile
+under that home, and dsh heals it to whichever CLI booted last. So:
+
+- **Never run two CLI generations under one home at once.** The second boot flips the
+  closure under the first process, which then lazily resolves mismatched modules
+  mid-flight. The launcher compares the closure's `dsh-agent` version with the CLI it is
+  about to boot and warns on **stderr** when they differ — after such a boot, restart the
+  other dsh processes under that home (`dsh web`, …).
+- **The escape hatch is the CLI, not the home.** Pin the launcher with `DSH_PATH=<dsh>`
+  (or use the repo pin below): the launcher resolves *which dsh*, never *which home*.
+
+Current resolutions are always visible:
 
 ```sh
-node scripts/compat-check.mjs   # installs the 0.1.0-rc.6, 0.1.2-rc.1, 0.1.5-rc.2 and 0.1.6-alpha.2 sets, imports the bridge from each
+node scripts/compat-check.mjs   # installs the 0.1.5-rc.2 and 0.1.6-alpha.2 sets and imports the bridge from each
+node scripts/acp-doctor.mjs     # CLI + closure versions, bundles, and one real boot
 ```
 
-### Dev checkout: repo-pinned CLI, isolated home
+### Dev checkout: repo-pinned CLI, shared home
 
 When the launcher runs **from a checkout** (`link:` install), it resolves the dsh CLI in
 this order:
@@ -368,29 +379,29 @@ this order:
 1. `$DSH_PATH` — an explicit dsh binary, or a directory whose `node_modules/.bin/dsh` holds one
 2. the repo-pinned CLI — `<repo>/node_modules/.bin/dsh` (this package's `@deepseek-ai/dsh`
    devDependency, currently 0.1.5-rc.2)
-3. global fallback — `dsh` on PATH / npx cache / npm prefix (the legacy behavior; a fresh
-   clone without `pnpm install` degrades to it)
+3. global fallback — `dsh` on PATH / npx cache / npm prefix (a fresh clone without
+   `pnpm install` degrades to it)
 
-Whenever (1) or (2) wins, the profile boots under an **isolated home**
-(`DSH_ACP_HOME`, default `~/.dsh-acp`): dsh heals its whole dependency closure into
-`$DSH_HOME/profiles/node_modules` on every boot — a dir shared by every profile under that
-home whose content flips to whichever CLI booted last — so a second CLI generation must not
-share a home with e.g. a running `dsh web`. The default home is never touched by this path.
-Harness-injected `DSH_HOME=$HOME/.dsh` in the child environment (dsh exports it into every
-agent/tool process) is detected and overridden, not honored — only a `DSH_HOME` pointing
-away from the default home is respected; to force the pinned CLI onto the default home,
-set `DSH_ACP_HOME=$HOME/.dsh` deliberately.
-
-Bootstrap the isolated home once (profile without `dsh-mnemon` — it does not support the
-0.1.2-alpha harness — plus your old profile's user rows ported verbatim and credentials/settings
-migration, the `subagent-model-selection-settings` host service the 0.1.2-alpha `standard`
-preset requires, and the DeepSeek plugin-package inventory reporter disabled):
+Whichever wins boots profile `acp-enhanced` **in the home the launcher was started with**
+(`${DSH_HOME:-$HOME/.dsh}`). The home is never rewritten. If you want the bridge on its
+own dependency closure, build a separate home and point the launcher at it explicitly:
 
 ```sh
-scripts/init-acp-home.sh            # idempotent; re-runs never clobber your files
+DSH_ACP_HOME=~/.dsh-acp scripts/init-acp-home.sh   # optional, idempotent: creates + seeds an isolated home
+# then in Zed's agent_servers env:  "DSH_HOME": "/Users/you/.dsh-acp"
 ```
 
-Both harness generations persist sessions under `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`, and the new generation reads old-generation logs (verified: history replay and the preset fold work cross-generation). Old threads therefore only need their session history copied to the new home — `scripts/init-acp-home.sh` prints the one-liner (or pass `--copy-sessions`); it copies nothing by default, because the default home's tree also holds every web-profile session.
+The isolated home is a deliberate opt-in, not a default: your profile must exist in
+whichever home the launcher boots, or it exits 127 with the exact `dsh plugin … add link:`
+command that creates it. `init-acp-home.sh` ports your old profile's user rows verbatim,
+copies credentials/settings, adds the `subagent-model-selection-settings` host service the
+shipped `standard` preset requires, and disables the DeepSeek plugin-package inventory
+reporter.
+
+Sessions persist under `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd` in both homes;
+nothing is copied between them by default, because the default home's tree also holds
+every web-profile session. Pass `--copy-sessions` (or run the `rsync` the script prints)
+when migrating an existing setup.
 
 ## Troubleshooting
 
@@ -433,7 +444,8 @@ the ACP wire), so the agent log already carries the layer and the fix.
 
 ```sh
 pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
-node scripts/compat-check.mjs         # cross-generation link check (0.1.0-rc.6 / 0.1.2-rc.1 / 0.1.5-rc.2 / 0.1.6-alpha.2 scratch installs)
+node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 scratch installs)
+npm run check:surface                 # public-surface guard: no undeclared harness API (blocking CI step)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
 node scripts/acp-client-tools.mjs     # client-tool tests (mocks Zed fs/terminal/elicitation/plan)
 node scripts/acp-mcp-test.mjs         # MCP mount test (no model calls)
@@ -470,8 +482,9 @@ block granularity by default (`streamDeltas: true` opts into token-level streami
 Features), one in-flight prompt per session. MCP supports stdio and streamable HTTP
 (legacy SSE / `acp` transports are not advertised).
 `session/close` / `session/fork` / `session/resume` are not implemented (capabilities
-undeclared, compliant clients will not call them); `session/delete` removes the
-persisted directory directly because dsh persistence has no official delete API.
+undeclared, compliant clients will not call them). `session/delete` is not advertised
+either: the harness declares no public persistence delete, so persisted sessions are
+never removed by the bridge (see [Compatibility](#compatibility)).
 
 Multi-root workspaces are advertised and all roots are visible to the model, but dsh's
 sandbox policy resolves **one writable root per session** (the primary `cwd`, i.e.
