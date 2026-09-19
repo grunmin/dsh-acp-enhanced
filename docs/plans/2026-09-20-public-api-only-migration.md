@@ -2,13 +2,15 @@
 
 - Date: 2026-09-20
 - Branch: **`feat/public-api-only`** (stacked on `feat/dsh-0.1.3-plus-support`)
-- Status: **P0 done**, P1–P4 pending
+- Status: **P0–P4 done** — executed 2026-09-20; see §11 for the execution record
 - Supersedes nothing; layers on top of the 0.1.3+ adaptation
 
 > **Handoff note for a fresh session.** Read this file top to bottom first. It is
 > written to be self-contained: it records the decisions already taken, the
 > machine state, the exact work items with `file:line`, and the commands to
 > verify each phase. Nothing else from the originating conversation is needed.
+> §11 records what the execution session actually did, including the two
+> deviations and the open items it did not close.
 
 ---
 
@@ -248,3 +250,69 @@ Keep that path and its arguments working unchanged.
   row in 0.1.2-rc.1, so disabling it would delete `/goal` on ≤0.1.1 hosts.
 - The parent branch `feat/dsh-0.1.3-plus-support` remains the escape hatch for
   users who cannot move off ≤0.1.2-rc.1.
+
+## 11. Execution record (2026-09-20, session 2)
+
+Commits on `feat/public-api-only` (oldest last):
+
+| Commit | Phase |
+| --- | --- |
+| `03493e3 docs: document the 0.9.0 breaking changes and the shared-home model` | P4 |
+| `fa65a54 feat(doctor): name the boot failure layer and keep the profile minimal` | P3 |
+| `783c7bc feat(api)!: consume only the declared harness surface (floor 0.1.5-rc.2)` | P2 |
+| `faae6fe fix(launcher): stop moving the profile to an implicit isolated home` | P1 |
+| `539bc43 docs(plan): handoff plan for the public-API-only migration` | P0 |
+
+Every row of §9 was run and passed, plus the three explicit P2 verification
+points:
+
+| Check | Result |
+| --- | --- |
+| `npm run check:surface` | `PUBLIC SURFACE OK (floor dsh 0.1.5-rc.2; 14 services, 5 events)` |
+| `node scripts/compat-check.mjs` | `COMPAT CHECK PASSED (2 generations link clean)` |
+| keyless smoke / mcp / fallback / resume on 0.1.5-rc.2 | ALL PASSED; fallback `frames=18`, reply exactly once |
+| P2.1 `optionOf` ≡ `presets[name]` | live: `availableModes` and the `permission_preset` options are identical option-for-option (3 presets, labels = table keys); now a permanent smoke assertion |
+| P2.2 `permission.set()` writes both knobs | live: `session/set_mode danger-full-access` logged `permission/preset` + `sandbox/mode` + `approval/policy`; the preset survives `session/load` in a new process (now asserted in the resume test) |
+| P2.3 `session/delete` gone | `sessionCapabilities` = `{list, additionalDirectories, close}`; `session/list` output unchanged (asserted) |
+| P1 launcher | `npm run test:launcher` — 21 checks: home never rewritten, missing profile → 127, drift warning stderr-only, three boot-failure translations |
+| P3 doctor | healthy scratch profile → `READY`; profile with an injected unresolvable bundle → `LAYER mount-time`, `SUBJECT broken-third-party (dsh-definitely-not-installed)`, exit 1 |
+| P4 docs | compat matrix replaced by the single-line statement + a breaking-changes table |
+
+### Deviations from the plan (both deliberate)
+
+1. **the per-step `streamSeam` latch was removed, not kept.** §2 said the
+   `agent/assistant-stream` seam "with per-step latch" was inherited and valid —
+   true while `assistant/chunk` existed. Deleting that seam (§3B) left the latch
+   write-only, so it went with it. Behaviour is unchanged: a single seam cannot
+   double-stream.
+2. **`dsh-agent-presets` was imported for real** (`isPresetClientError`'s
+   instanceof fallback), so §3A's "zero usages" was wrong. The import was deleted
+   *with* that fallback, which is dead on the new floor: 0.1.5 throws
+   `RemoteError` with an `agent-preset/*` code, and `UnknownPresetError` /
+   `PresetMountError` / the `presetId` branch no longer exist upstream.
+   `scripts/compat/public-surface.json` also gained `agentPresets.serviceFor`
+   (used through a call, so the extractor never saw it) and lost the two
+   "pending citation check" notes — both members were confirmed against the
+   installed 0.1.5-rc.2 `lib/types/*.d.ts`.
+
+### Not closed
+
+- §10's `command-goal` item was left as the plan states ("stays intentionally
+  enabled"). Its stated reason — `/goal` would disappear on ≤0.1.1 hosts — no
+  longer applies on this branch, since the floor is 0.1.5-rc.2 and the shipped
+  `standard` preset owns that row from 0.1.2-rc.1. Adding `- id: command-goal` +
+  `disabled: true` to `cordis.patch.yml` would align it with the official
+  web-app/tui patch. Left for the maintainer to decide.
+- `subagent-model-selection-settings` still lives in the profile's user layer
+  (`init-acp-home.sh` / `host-service-row.mjs`) although the bridge could now
+  ship the row itself in `cordis.patch.yml` (the module exists on every
+  supported CLI). §7 blessed leaving the generation gate; moving it would change
+  every fresh profile boot, so it is a separate change.
+- The launcher's global-CLI fallback is still reachable, but the machine's
+  global `dsh` is **0.1.1-rc.2** — below the new floor. Reinstalling the bridge
+  into `~/.dsh/profiles/acp-enhanced` without upgrading the global CLI (or
+  pinning `DSH_PATH`) leaves ACP dead; the doctor and the launcher's run-time
+  translation both say so.
+- §8's environment note is otherwise unchanged: the installed bridge copy in the
+  maintainer's profile is still 0.7.0 from a tarball, so the live setup is
+  unaffected until it is reinstalled.
