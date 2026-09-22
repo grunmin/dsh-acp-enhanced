@@ -1,6 +1,6 @@
 {
   "name": "dsh-acp-enhanced",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Enhanced ACP server for DeepSeek Harness: block-level streaming, usage/stat telemetry (cache hit rate, token speed, input/output tokens, context length, turns, tool timing), model & reasoning-effort switching, and permission-preset control over the ACP wire (Zed-friendly)",
   "keywords": [
     "dsh",
@@ -23,6 +23,7 @@
   "files": [
     "lib",
     "profile",
+    "presets",
     "scripts/dsh-acp-zed.sh",
     "scripts/init-acp-home.sh",
     "scripts/acp-doctor.mjs",
@@ -46,7 +47,8 @@
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2-rc.1",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
     "@deepseek-ai/dsh-agent-instructions": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
+    "@deepseek-ai/dsh-agent-preset": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-alpha.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
     "@deepseek-ai/dsh-mcp-client": "^0.1.5-rc.2 || ^0.1.6-alpha.1",
@@ -64,7 +66,8 @@
     "@deepseek-ai/dsh": "0.1.5-rc.2",
     "@deepseek-ai/dsh-agent": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-agent-instructions": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-agent-preset": "^0.1.7-alpha.1",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-alpha.1",
     "@deepseek-ai/dsh-invariants": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-mcp-client": "^0.1.5-rc.2",
@@ -100,7 +103,13 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/standard.patch.yml",
+        "./presets/ptc.patch.yml",
+        "./presets/minimal.patch.yml",
+        "./presets/cordis.patch.yml"
+      ]
     }
   }
 }
