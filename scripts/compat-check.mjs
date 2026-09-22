@@ -12,7 +12,7 @@
  * an older one.
  *
  * The service-side generation differences are gone: the bridge targets one
- * declared API line (floor 0.1.5-rc.2) and does not probe service shapes at
+ * declared API line (floor 0.1.7-alpha.1) and does not probe service shapes at
  * runtime. Behaviour on a live host is covered by the e2e runs in scripts/.
  *
  * Usage: node scripts/compat-check.mjs [--registry <npm-registry>]
@@ -37,52 +37,35 @@ const bridgeDeps = {
   zod: '^4.4.3',
 }
 
-// The supported API generations, both on the `agent/assistant-stream` frames
-// line (0.1.3-alpha.2+): "frames" is the pinned rc line, "framesNext" the alpha
-// line that supersedes it. Each mirrors the repo devDependency ranges (the same
-// ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh resolution
-// matches what a real profile boot heals.
+// The supported API generation: the 0.1.7 agent-preset plane (declarative
+// `@deepseek-ai/dsh-agent-preset` rows served by the registry). The 0.1.5-rc.2
+// and 0.1.6-alpha.2 lines cannot be composed by this bundle at all — 0.1.7
+// removed the `@deepseek-ai/dsh-agent-presets` roster the bundle used to mount,
+// and one static patch cannot mount both a removed package and its replacement —
+// so the link check has one generation, not two. Its ranges mirror the repo
+// devDependency ranges (the same ranges the pinned @deepseek-ai/dsh CLI
+// declares), so a fresh resolution matches what a real profile boot heals.
 const GENERATIONS = {
-  frames: {
-    label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
+  presets: {
+    label: '0.1.7+ (agent-preset plane, alpha line)',
     deps: {
-      '@deepseek-ai/cordis': '^4.0.2',
+      '@deepseek-ai/cordis': '^4.0.3',
       '@deepseek-ai/cordis-plugin-include': '^1.0.7',
-      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
-      '@deepseek-ai/dsh': '0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent-instructions': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent-presets': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-invariants': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-llm': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-mcp-client': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-permission-presets': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-session': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-session-query': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-skill': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-tools': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-user-approval': '^0.1.5-rc.2',
-    },
-  },
-  framesNext: {
-    label: '0.1.3-alpha.2+ (assistant-stream frames API, alpha line)',
-    deps: {
-      '@deepseek-ai/cordis': '^4.0.2',
-      '@deepseek-ai/cordis-plugin-include': '^1.0.7',
-      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
-      '@deepseek-ai/dsh': '0.1.6-alpha.2',
-      '@deepseek-ai/dsh-agent': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-agent-instructions': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-agent-presets': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-invariants': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-llm': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-mcp-client': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-permission-presets': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-session': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-session-query': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-skill': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-tools': '^0.1.6-alpha.2',
-      '@deepseek-ai/dsh-user-approval': '^0.1.6-alpha.2',
+      '@deepseek-ai/cordis-plugin-loader': '^1.0.4',
+      '@deepseek-ai/dsh': '0.1.7-alpha.1',
+      '@deepseek-ai/dsh-agent': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-agent-instructions': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-agent-preset': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-agent-preset-registry': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-invariants': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-llm': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-mcp-client': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-permission-presets': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-session': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-session-query': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-skill': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-tools': '^0.1.7-alpha.1',
+      '@deepseek-ai/dsh-user-approval': '^0.1.7-alpha.1',
     },
   },
 }
@@ -112,8 +95,8 @@ for (const [name, generation] of Object.entries(GENERATIONS)) {
     cpSync(join(repoDir, 'package.json'), join(scratch, 'package.json'))
     const host = await import(pathToFileURL(join(scratch, 'lib', 'index.js')).href)
     const llmVersion = (await import(pathToFileURL(join(scratch, 'node_modules', '@deepseek-ai', 'dsh-llm', 'package.json')).href, { with: { type: 'json' } })).default.version
-    const presetsKeys = Object.keys(await import(pathToFileURL(join(scratch, 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'lib', 'index.js')).href))
-    console.log(`PASS  [${name}] bridge imports clean under ${generation.label} (dsh-llm ${llmVersion}; dsh-agent-presets exports ${presetsKeys.length} symbols; bridge exports ${Object.keys(host).length})`)
+    const presetsKeys = Object.keys(await import(pathToFileURL(join(scratch, 'node_modules', '@deepseek-ai', 'dsh-agent-preset-registry', 'lib', 'index.js')).href))
+    console.log(`PASS  [${name}] bridge imports clean under ${generation.label} (dsh-llm ${llmVersion}; dsh-agent-preset-registry exports ${presetsKeys.length} symbols; bridge exports ${Object.keys(host).length})`)
   } catch (error) {
     console.log(`FAIL  [${name}] bridge failed to import under ${generation.label}: ${error.message}`)
     failed += 1

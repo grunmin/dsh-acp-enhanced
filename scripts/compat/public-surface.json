@@ -21,7 +21,7 @@
     "not scanned mechanically — the `session.events` denylist entry is what catches",
     "a regression in how the log is read."
   ],
-  "supportedDshFloor": "0.1.5-rc.2",
+  "supportedDshFloor": "0.1.7-alpha.1",
   "frameworkNote": "Cordis framework built-ins (cordis / cordis-plugin-loader), not harness surface.",
   "framework": [
     "get", "on", "waterfall", "serial", "bail", "emit", "logger", "effect",
