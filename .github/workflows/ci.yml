@@ -14,12 +14,15 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 24]
-        # Both lines the peer range claims: the pin (0.1.5-rc.2) and the 0.1.6
-        # alpha line. Every job below boots a real profile, so a green run is
-        # boot-time verification of the support claim — the old matrix had no
-        # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
-        # `.github/workflows/canary.yml` watches the line after these.
-        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2']
+        # The one line the peer range claims. dsh 0.1.7 replaced the
+        # `@deepseek-ai/dsh-agent-presets` roster with declarative
+        # `@deepseek-ai/dsh-agent-preset` rows served by the registry, so the
+        # 0.1.5-rc.2 / 0.1.6-alpha.2 lines this matrix used to boot can no
+        # longer be composed by this bundle: one static patch cannot mount both
+        # a removed package and its replacement. Every job below boots a real
+        # profile, so a green run is boot-time verification of the support
+        # claim. `.github/workflows/canary.yml` watches the line after this.
+        dsh-version: ['0.1.7-alpha.1']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -36,7 +36,10 @@ const shipped = new Map(packed.files.map((entry) => [entry.path, entry]))
 const read = (path) => readFileSync(join(repoDir, path), 'utf8')
 
 // ── 1. the entry points must ship ───────────────────────────────────────────
-const entryPoints = new Set([manifest.main, manifest.dsh?.bundle?.patch]
+// `dsh.bundle.patch` is one path or an ordered list of them (the 0.1.7 form);
+// every listed patch is an entry point that must ship.
+const bundlePatch = manifest.dsh?.bundle?.patch
+const entryPoints = new Set([manifest.main, ...(Array.isArray(bundlePatch) ? bundlePatch : [bundlePatch])]
   .map((path) => path?.replace(/^\.\//, '')))
 for (const target of Object.values(manifest.exports ?? {})) {
   if (typeof target === 'string') entryPoints.add(target.replace(/^\.\//, ''))
