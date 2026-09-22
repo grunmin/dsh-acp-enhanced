@@ -39,10 +39,13 @@ over the ACP wire.
 - **Permission presets**: read-only / workspace-write / full-access session modes
 - **Approval**: native allow-once / reject-once prompts per tool call
 - **Agent presets**: per-session model-facing composition (tools + prompt sections)
-  from the dsh agent-presets roster. `standard` is the full coding agent (default),
+  from the dsh agent-preset plane — declarative `@deepseek-ai/dsh-agent-preset` rows
+  served by `@deepseek-ai/dsh-agent-preset-registry`, whose declarations this bundle
+  vendors under `presets/`. `standard` is the full coding agent (default),
   `minimal` (极简模式) is a bare shell + files editor with **no** subagent/web/todo/plan
-  tools — nothing from the host layer leaks into a minimal agent; `code` and `cordis`
-  ship alongside, and your own presets under `~/.dsh/.agent-presets` appear too.
+  tools — nothing from the host layer leaks into a minimal agent; `ptc` and `cordis`
+  ship alongside. A new preset (or an override of a shipped one) is a bundle patch that
+  inserts a `@deepseek-ai/dsh-agent-preset` row or patches that row by id.
   Choose via the `agent_preset` config option, the `/preset` command, or the
   `DSH_ACP_PRESET` env var (per-session default); switching is only allowed while the
   session is still blank (no turn has run), so history never straddles two tool sets.
@@ -111,7 +114,7 @@ After picking **dsh-acp-enhanced** in Zed's AI Agent panel:
 
 ## Quick start
 
-**Requires `dsh ≥ 0.1.5-rc.2`** (`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`); the bridge
+**Requires `dsh ≥ 0.1.7-alpha.1`** (`npm install -g @deepseek-ai/dsh@0.1.7-alpha.1`); the bridge
 targets one declared harness API line and does not probe older generations at runtime.
 
 This package follows the official dsh plugin conventions (it declares `dsh.bundle`), so
@@ -151,7 +154,7 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
       "env": {
         "DSH_ACP_PROVIDER": "deepseek-official",  // the official provider id
         "DSH_ACP_MODEL": "deepseek-v4-flash",     // the official model id
-        "DSH_ACP_PRESET": "standard"              // optional: agent preset id (minimal / standard / code / cordis / yours)
+        "DSH_ACP_PRESET": "standard"              // optional: agent preset id (minimal / standard / ptc / cordis)
       }
     }
   }
@@ -160,7 +163,7 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
 
 > Both env vars match the shipped patch's defaults, so **they can be omitted entirely** —
 > writing them out just makes the route explicit. `DSH_ACP_PRESET` defaults to `standard`
-> on the roster side; set it when you want every new session to start in a specific mode.
+> on the registry side; set it when you want every new session to start in a specific mode.
 > The API key does not have to live in Zed:
 > store it in `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`) and the dsh credentials
 > service resolves it; the launcher also falls back to a running `dsh web` process's key.
@@ -316,10 +319,10 @@ Keep `dsh.profile.bundles` at exactly the two rows that cannot mismatch their ow
 boots it; every other bundle is a third party whose dependency closure can drift. Mount
 extra plugins where a failure costs one preset instead of the whole editor session:
 
-- **Plugin adds only model-facing tools/commands** → declare its row in a preset
-  composition. User presets live in `$DSH_HOME/.agent-presets/<id>/` (`agent.cordis.yml`
-  for the composition, `preset.yml` for the picker label); the roster discovers them
-  automatically and the ACP `agent_preset` dropdown lists them. A preset whose
+- **Plugin adds only model-facing tools/commands** → declare it in a preset
+  composition. A preset is a `@deepseek-ai/dsh-agent-preset` row; a new one (or an
+  override of a shipped one) is a bundle patch that inserts that row or patches it by
+  id, and the registry serves it to the ACP `agent_preset` dropdown. A preset whose
   composition fails to load is reported as broken and simply not offered, instead of
   killing the process.
 - **Plugin must configure a host service** (e.g. a search provider overriding the host
@@ -336,10 +339,10 @@ dsh --profile acp-enhanced --dump-config   # where each row comes from
 
 ## Compatibility
 
-One bridge binary, one harness API line: **dsh ≥ 0.1.5-rc.2** (peer range
-`^0.1.5-rc.2 || ^0.1.6-alpha.1`). Both lines in that range are **boot-verified** —
-handshake, profile settle and a real `session/new` — on every CI run, plus a cross-generation
-link check. The bridge consumes only the harness's **declared** surface: services in
+One bridge binary, one harness API line: **dsh ≥ 0.1.7-alpha.1** (peer range
+`^0.1.7-alpha.1`). That line is **boot-verified** — handshake, profile settle and a real
+`session/new` — on every CI run, plus a link check against the same generation. The bridge
+consumes only the harness's **declared** surface: services in
 `docs/capability-seams.md`, events in `docs/event-producer-consumer.md`, published package
 exports. `scripts/api-surface-check.mjs` fails on anything else (a blocking CI step), and
 there is no runtime generation probing left — no version flags, no duck-typed service shapes.
@@ -348,9 +351,10 @@ there is no runtime generation probing left — no version flags, no duck-typed 
 
 | Bridge | Supported dsh lines | What changed |
 |---|---|---|
-| **0.9.x** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
-| 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1` (unreleased) | 0.1.3+ live-stream seam; 0.1.5 persistence handle API |
-| 0.7.x and older | ≤ 0.1.2-rc.1 | runtime probing of both generations |
+| **0.10.x** | `^0.1.7-alpha.1` | agent-preset-plane migration: mounts `@deepseek-ai/dsh-agent-preset-registry` instead of the removed roster and vendors the preset declarations under `presets/`; floor 0.1.7-alpha.1 |
+| 0.9.x (superseded) | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
+| 0.8.x (superseded) | `^0.1.0-rc.6 … ^0.1.6-alpha.1` (unreleased) | 0.1.3+ live-stream seam; 0.1.5 persistence handle API |
+| 0.7.x and older (superseded) | ≤ 0.1.2-rc.1 | runtime probing of both generations |
 
 The rules behind that table:
 
@@ -363,6 +367,13 @@ The rules behind that table:
 - **Watch the next line before it is released**: the scheduled `canary` workflow installs the
   `alpha` dist-tag and runs the guard, the link check and a boot smoke, so a breaking change
   shows up as a red canary rather than as user breakage.
+
+### What 0.10.0 changed (breaking)
+
+| Change | Effect | If it bites |
+|---|---|---|
+| **dsh 0.1.7 removed the `@deepseek-ai/dsh-agent-presets` roster** | one static bundle patch cannot mount both a removed package and its replacement, so this bundle now mounts `@deepseek-ai/dsh-agent-preset-registry` and vendors the preset declarations under `presets/` (`standard` / `ptc` / `minimal` / `cordis`, listed in `dsh.bundle.patch`) | upgrade the CLI to the 0.1.7 line; on an older host the registry does not exist, so a session would compose with no tools at all |
+| floor raised to dsh **≥ 0.1.7-alpha.1** | the peer range is `^0.1.7-alpha.1`; the **0.1.5-rc.2 and 0.1.6-alpha.2 lines are dropped** and no longer boot-verified | on 0.1.5-rc.2 / 0.1.6-alpha.2, **stay on bridge 0.9.x**; otherwise move the CLI (`npm install -g @deepseek-ai/dsh@0.1.7-alpha.1`) and the bridge (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`) together |
 
 ### What 0.9.0 changed (breaking)
 
@@ -386,8 +397,8 @@ have to move **together** — in either order the half-upgraded pair is broken:
 
 Checklist:
 
-1. `npm install -g @deepseek-ai/dsh@0.1.5-rc.2` (or any version in the peer range above).
-2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.9.0`. Upgrading the bridge is
+1. `npm install -g @deepseek-ai/dsh@0.1.7-alpha.1` (or any version in the peer range above).
+2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`. Upgrading the bridge is
    explicit: the profile's dependency is a caret on 0.x, so `dsh plugin update` will **not**
    move you to a new minor by itself.
 3. Booted the profile from a checkout, or set `DSH_PATH` before? The old launcher moved you
@@ -398,8 +409,8 @@ Checklist:
    user layer? Delete the row: the bridge's patch ships it now, and a duplicate id aborts the
    boot. `scripts/init-acp-home.sh` retires it for you. The launcher warns, and the doctor
    names the id.
-5. Check that any third-party bundle in the profile supports 0.1.5 (`dsh-free-search` ≥ 0.4.24
-   is verified) — the profile is one failure domain.
+5. Check that any third-party bundle in the profile supports the 0.1.7 line — the profile
+   is one failure domain, and a bundle still built for 0.1.5/0.1.6 will abort the boot.
 6. Restart Zed (or open a fresh agent thread); `node <pkg>/scripts/acp-doctor.mjs` verifies the
    whole path first, including opening a thread.
 
@@ -408,10 +419,10 @@ Checklist:
 `$DSH_HOME/profiles/node_modules` is a single dependency closure shared by every profile
 under that home, and dsh heals it to whichever CLI booted last. So:
 
-> This is **0.1.5-line behaviour**. On 0.1.6-alpha.2 that shared closure no longer exists at
-> all (the harness resolves from the CLI's own install; the profile's `node_modules` holds
-> only out-of-tree plugins), which is why the launcher's drift check is line-specific and
-> silently no-ops where the path is gone.
+> The shared closure is a **0.1.5-line shape**: the 0.1.6 line already dropped it (the
+> harness resolves from the CLI's own install; the profile's `node_modules` holds only
+> out-of-tree plugins), and the supported 0.1.7 line inherits that. That is why the
+> launcher's drift check is line-specific and silently no-ops where the path is gone.
 
 
 
@@ -426,7 +437,7 @@ under that home, and dsh heals it to whichever CLI booted last. So:
 Current resolutions are always visible:
 
 ```sh
-node scripts/compat-check.mjs   # dev checkout: installs the 0.1.5-rc.2 and 0.1.6-alpha.2 sets and imports the bridge from each
+node scripts/compat-check.mjs   # dev checkout: installs the one 0.1.7-alpha.1 scratch generation and imports the bridge plus @deepseek-ai/dsh-agent-preset-registry from it
 node <pkg>/scripts/acp-doctor.mjs   # CLI + closure versions, bundles, and one real boot (shipped)
 ```
 
@@ -437,7 +448,7 @@ this order:
 
 1. `$DSH_PATH` — an explicit dsh binary, or a directory whose `node_modules/.bin/dsh` holds one
 2. the repo-pinned CLI — `<repo>/node_modules/.bin/dsh` (this package's `@deepseek-ai/dsh`
-   devDependency, currently 0.1.5-rc.2)
+   devDependency, currently 0.1.7-alpha.1)
 3. global fallback — `dsh` on PATH / npx cache / npm prefix (a fresh clone without
    `pnpm install` degrades to it)
 
@@ -505,7 +516,7 @@ the ACP wire), so the agent log already carries the layer and the fix.
 
 ```sh
 pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
-node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 scratch installs)
+node scripts/compat-check.mjs         # link check against the supported line (one 0.1.7-alpha.1 scratch install)
 node scripts/api-surface-check.mjs    # public-surface guard: no undeclared harness API (blocking CI step)
 node scripts/pack-check.mjs           # package integrity: entry points, modes, shipped-file references (blocking CI step)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
@@ -524,7 +535,7 @@ scripts/init-acp-home.sh              # optional: bootstrap an *isolated* home (
 ```
 
 DevDependency pins for the harness packages use the same ranges the pinned
-`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.5-rc.2`), so the repo's tree and a fresh
+`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.7-alpha.1`), so the repo's tree and a fresh
 CLI install resolve one coherent family — exact patch pins here mixed with the CLI's
 range-resolved closure produce a split closure (two versions of one name) that breaks
 profile boots with export-not-found errors. After changing those pins, regenerate the
@@ -560,14 +571,16 @@ True multi-root write enforcement belongs in dsh core (`dsh-sandbox-policy` /
 Agent presets take over the model-facing rows: the shipped `cordis.patch.yml` disables
 the dsh-base rows a preset owns (tool-bash/fs/subagent/todo/web/… — exactly the official
 dsh-web-app/tui list minus `hmr`, kept version-agnostic across generations: a row a given
-generation does not ship is warned and skipped by the patch applier) and mounts the
-`agent-presets` roster (`standard`
-default; `code`/`minimal`/`cordis` ship with the dsh CLI, your own preset dirs under
-`~/.dsh/.agent-presets` are picked up automatically). The bundle's own patch applies
+generation does not ship is warned and skipped by the patch applier) and mounts
+`@deepseek-ai/dsh-agent-preset-registry` (`standard`
+default; the declarations for `standard`/`ptc`/`minimal`/`cordis` are vendored under
+`presets/` and listed in `dsh.bundle.patch`; a new preset or an override of a shipped
+one is a bundle patch that inserts a `@deepseek-ai/dsh-agent-preset` row or patches it
+by id). The bundle's own patch applies
 automatically (package.json `dsh.bundle.patch`) — do **not** copy it into the profile's
 user-layer `cordis.patch.yml`, or the loader rejects the duplicate entry ids at boot.
 When **upgrading** a profile that already carries a customized user-layer patch, keep
 only your custom row configs there (e.g. `includeAllProviders: true` on the
 acp-enhanced row, restating provider/model/preset since patch entries replace whole
 rows, they do not merge). A session created before the upgrade resumes under the
-roster's default preset.
+registry's default preset.
