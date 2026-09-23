@@ -62,12 +62,19 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 DASH_BIN=""
 if [ -n "${DSH_PATH:-}" ]; then
-  # 1. Explicit override: a dsh binary, or a directory containing one under
-  # node_modules/.bin (e.g. a dsh checkout).
-  if [ -x "${DSH_PATH}" ]; then
+  # 1. Explicit override: a directory whose node_modules/.bin/dsh holds the CLI
+  #    (e.g. a dsh checkout), or an explicit dsh binary. The directory form is
+  #    checked FIRST: `test -x` is true for any searchable directory, so the
+  #    binary probe alone would swallow a checkout path and `exec` a directory.
+  if [ -d "${DSH_PATH}" ]; then
+    if [ -x "${DSH_PATH}/node_modules/.bin/dsh" ]; then
+      DASH_BIN="${DSH_PATH}/node_modules/.bin/dsh"
+    else
+      echo "dsh-acp-zed: DSH_PATH is a directory but holds no node_modules/.bin/dsh ('${DSH_PATH}')" >&2
+      exit 127
+    fi
+  elif [ -f "${DSH_PATH}" ] && [ -x "${DSH_PATH}" ]; then
     DASH_BIN="${DSH_PATH}"
-  elif [ -x "${DSH_PATH}/node_modules/.bin/dsh" ]; then
-    DASH_BIN="${DSH_PATH}/node_modules/.bin/dsh"
   else
     echo "dsh-acp-zed: DSH_PATH is set but holds no dsh ('${DSH_PATH}')" >&2
     exit 127

@@ -37,7 +37,7 @@ rl.on('line', (line) => {
   if (u.sessionUpdate === 'tool_call' && (u._meta?.name === 'web_search' || u._meta?.name === 'web')) {
     notes.webCalls += 1
   }
-  if (u.sessionUpdate === 'tool_call_update' && u.status === 'error') {
+  if (u.sessionUpdate === 'tool_call_update' && u.status === 'failed') {
     notes.anyErrors += 1
   }
   if (u.sessionUpdate === 'agent_message_chunk') notes.chunks.push(u.content?.text ?? '')
