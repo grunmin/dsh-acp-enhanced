@@ -147,7 +147,7 @@ check('mediaType empty → undefined', canonicalImageMediaType(undefined) === un
     threw = error
   }
   check('oversized image throws PromptImageError', threw instanceof PromptImageError
-    && /encoded-byte limit/.test(threw.message), String(threw?.message))
+    && /image-byte limit/.test(threw.message), String(threw?.message))
 }
 
 {
@@ -190,6 +190,43 @@ check('mediaType empty → undefined', canonicalImageMediaType(undefined) === un
   }
   check('store saveImage failure wrapped as PromptImageError', threw instanceof PromptImageError
     && /disk full/.test(threw.message), String(threw?.message))
+}
+
+// ── convertPrompt: all validation precedes any store write ─────────────────
+
+{
+  // [image, audio]: the unsupported block must be reported and the image must
+  // NOT be saved first (no orphan in the store).
+  const { store, calls } = fakeStore()
+  let threw = null
+  try {
+    await convertPrompt([
+      { type: 'image', mimeType: 'image/png', data: ONE_PX_PNG },
+      { type: 'audio', data: 'AAAA' },
+    ], store)
+  } catch (error) {
+    threw = error
+  }
+  check('unsupported block after an image rejects before any save',
+    threw instanceof UnsupportedPromptContentError && calls.save.length === 0,
+    `${String(threw?.message)} saves=${calls.save.length}`)
+}
+{
+  // Error priority is order-independent: an unsupported block anywhere wins
+  // over an image admission failure anywhere else.
+  const { store, calls } = fakeStore({ imageLimits: { maxImageBytes: 10, maxImagesPerMessage: 1, maxMessageImageBytes: 1000 } })
+  let threw = null
+  try {
+    await convertPrompt([
+      { type: 'image', mimeType: 'image/png', data: ONE_PX_PNG },
+      { type: 'audio', data: 'AAAA' },
+    ], store)
+  } catch (error) {
+    threw = error
+  }
+  check('unsupported content beats image limits regardless of order',
+    threw instanceof UnsupportedPromptContentError && calls.save.length === 0,
+    String(threw?.message))
 }
 
 console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
