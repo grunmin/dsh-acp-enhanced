@@ -179,6 +179,9 @@ hang is attributable afterwards: a **model request stall** shows a long gap betw
 `step/start` and the first `assistant/chunk`, while a **tool-execution stall** shows a
 long gap between `tool/call` and `tool/result` (the result line carries `elapsedMs`).
 `prompt/settled` lines cover the full user-message round trip (stopReason + elapsed).
+The same trace can be switched on from the profile instead of the environment with the
+`logFile` config option on the acp-enhanced row (`ACP_LOG` wins when both are set; unset
+disables tracing).
 
 Optional: pin the panel's default config options (all still changeable in the panel):
 
@@ -361,7 +364,7 @@ The rules behind that table:
 - **A line is dropped by publishing a bridge that says so**; the previous line stays on the
   `feat/dsh-0.1.3-plus-support` branch for users who cannot move.
 - **Watch the next line before it is released**: the scheduled `canary` workflow installs the
-  `alpha` dist-tag and runs the guard, the link check and a boot smoke, so a breaking change
+  `alpha` dist-tag and runs the guard, the link check and boot smokes, so a breaking change
   shows up as a red canary rather than as user breakage.
 
 ### What 0.9.0 changed (breaking)
@@ -375,8 +378,8 @@ The rules behind that table:
 
 ### Upgrading from a published ≤ 0.7.0
 
-The published `latest` is **0.7.0**, from the pre-0.1.3 API line, so the bridge and the CLI
-have to move **together** — in either order the half-upgraded pair is broken:
+The last `latest` before 0.9.0 was **0.7.0**, from the pre-0.1.3 API line, so the bridge
+and the CLI have to move **together** — in either order the half-upgraded pair is broken:
 
 | Order | What you get |
 |---|---|
@@ -515,7 +518,9 @@ node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
+node scripts/session-facts-test.mjs    # session-log folds: preset + blank-ness (no network)
 node scripts/replay-order-test.mjs     # replay/fallback chunk order: reasoning precedes its reply (no network)
+node scripts/web-search-test.mjs       # web_search end-to-end through the mounted search provider (needs a key)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once
 node scripts/acp-launcher-test.mjs     # launcher contract: home never rewritten, drift warning, boot-failure translation

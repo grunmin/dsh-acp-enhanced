@@ -147,6 +147,22 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
 > （`DEEPSEEK_API_KEY`）由 dsh 凭据服务解析即可；启动脚本还会兜底继承正在运行的
 > `dsh web` 进程的 key。
 
+排查卡住的轮次（是模型请求还是工具？）：
+
+```jsonc
+"env": {
+  // ...已有变量...
+  "ACP_LOG": "/Users/you/.dsh/dsh-acp-enhanced.trace.jsonl"  // 追加写入的 JSONL 事件 trace
+}
+```
+
+每一行是一个会话事件，带毫秒级墙钟 `time`；事后可归因看似挂起的轮次：**模型请求卡住**
+表现为 `step/start` 到第一个 `assistant/chunk` 之间间隔很长，**工具执行卡住**表现为
+`tool/call` 与 `tool/result` 之间间隔很长（结果行带 `elapsedMs`）。
+`prompt/settled` 行覆盖完整用户消息往返（stopReason + 耗时）。
+同样的 trace 也可以不开环境变量、改用 acp-enhanced 行的 `logFile` 配置项开启
+（两者都设时 `ACP_LOG` 优先；都不设则不追踪）。
+
 可选：固定面板默认项（都可随时在面板里改）：
 
 ```jsonc
@@ -312,7 +328,6 @@ profile settle 与真实 `session/new`——另有跨代链接检查。桥只消
   供无法迁移的用户使用。
 - **在下一条线发布之前就盯住它**：定时 `canary` workflow 会安装 `alpha` dist-tag 并跑表面守卫、
   链接检查与启动冒烟，因此破坏性变更表现为 canary 变红，而不是用户侧故障。
-
 ### 0.9.0 的破坏性变更
 
 | 变更 | 影响 | 中招了怎么办 |
@@ -324,8 +339,8 @@ profile settle 与真实 `session/new`——另有跨代链接检查。桥只消
 
 ### 从已发布的 ≤ 0.7.0 升级
 
-npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥和 CLI **必须一起动**——只升一半，
-两种顺序都会坏：
+0.9.0 之前 npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥和 CLI
+**必须一起动**——只升一半，两种顺序都会坏：
 
 | 顺序 | 结果 |
 |---|---|
@@ -451,7 +466,9 @@ node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI 用）
 node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
+node scripts/session-facts-test.mjs   # 会话日志折叠：preset 与空白判定（无网络）
 node scripts/replay-order-test.mjs    # 重放/回退的分块顺序：思考块先于它产出的回复（无网络）
+node scripts/web-search-test.mjs      # web_search 端到端（走已挂载的搜索 provider，需 key）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
 node scripts/acp-launcher-test.mjs    # 启动器契约：home 不被改写、代次漂移告警、启动失败翻译
