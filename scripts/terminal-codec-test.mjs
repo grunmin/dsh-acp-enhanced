@@ -6,6 +6,7 @@
  */
 import {
   isTerminalToolName,
+  nameHasKeyword,
   parseShellExitStatus,
   resultText,
   shellCallCwd,
@@ -41,6 +42,28 @@ check('toolKindFor(fetch_url) → fetch', toolKindFor('fetch_url') === 'fetch')
 check('toolKindFor(think) → think', toolKindFor('think') === 'think')
 check('toolKindFor(str_replace_editor) → edit', toolKindFor('str_replace_editor') === 'edit')
 check('toolKindFor(run_code) → other', toolKindFor('run_code') === 'other')
+// Whole-segment classification: a keyword buried inside another word is not a
+// class signal (these were the substring false positives).
+check('toolKindFor(locate) → other (cat is not a segment)', toolKindFor('locate') === 'other')
+check('toolKindFor(concat) → other (cat is not a segment)', toolKindFor('concat') === 'other')
+check('toolKindFor(showcase) → other (show is not a segment)', toolKindFor('showcase') === 'other')
+check('toolKindFor(dispatch) → other (patch is not a segment)', toolKindFor('dispatch') === 'other')
+check('toolKindFor(fs_write_readonly_x) → edit, not read',
+  toolKindFor('fs_write_readonly_x') === 'edit')
+check('toolKindFor(content_search) → search (multi-segment keyword)',
+  toolKindFor('content_search') === 'search')
+check('toolKindFor(mcp__fs__read_file) → read (provider-mangled name)',
+  toolKindFor('mcp__fs__read_file') === 'read')
+
+// ── nameHasKeyword: segment boundaries and multi-segment keywords ──────────
+
+check('nameHasKeyword(read) on read → true', nameHasKeyword('read', ['read']) === true)
+check('nameHasKeyword(read) on already → false', nameHasKeyword('already', ['read']) === false)
+check('nameHasKeyword(read) on read_text_file → true', nameHasKeyword('read_text_file', ['read']) === true)
+check('nameHasKeyword(run_code) on run_code → true', nameHasKeyword('run_code', ['run_code']) === true)
+check('nameHasKeyword(run_code) on runner_codebase → false',
+  nameHasKeyword('runner_codebase', ['run_code']) === false)
+check('nameHasKeyword is camelCase-aware (readTextFile)', nameHasKeyword('readTextFile', ['read']) === true)
 
 // ── isTerminalToolName: only the dsh-side shell executors ──────────────────
 
