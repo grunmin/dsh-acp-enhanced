@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -12,6 +13,10 @@ jobs:
       # job-level env var instead so the full e2e step can gate on presence.
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     strategy:
+      # Each matrix cell is a support claim (dsh line × node line); one red
+      # cell must not cancel the others — the whole point is seeing WHICH
+      # lines break.
+      fail-fast: false
       matrix:
         node-version: [22, 24]
         # Every line the peer range claims: the pin (0.1.5-rc.2), the 0.1.6 alpha
@@ -33,7 +38,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
       - name: Launcher contract (no implicit home switch)
@@ -43,8 +48,11 @@ jobs:
           node scripts/replay-order-test.mjs
           node scripts/codec-image-test.mjs
           node scripts/terminal-codec-test.mjs
+          node scripts/session-facts-test.mjs
       - name: Package integrity (entry points, shipped references, modes)
         run: node scripts/pack-check.mjs
+      - name: Cross-generation link check (README's promised guard)
+        run: node scripts/compat-check.mjs
       - name: Install dsh CLI (${{ matrix.dsh-version }})
         run: npm install -g @deepseek-ai/dsh@${{ matrix.dsh-version }}
       - name: Keyless boot smoke (initialize + session/new)

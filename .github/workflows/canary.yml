@@ -41,6 +41,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
+      - name: Cross-generation link check
+        run: node scripts/compat-check.mjs
       - name: Install the canary CLI
         run: |
           npm install -g @deepseek-ai/dsh@alpha
