@@ -1,9 +1,10 @@
 name: canary (next dsh line)
 
 # Early warning for harness breaking changes. The `alpha` dist-tag carries the
-# line after the pinned one (`alpha` = 0.1.6-alpha.2 while `latest`/`next` =
-# 0.1.5-rc.2), so an upstream break shows up here — red, in the open — instead of
-# as user breakage after a release.
+# line after the pinned one (see `npm dist-tags @deepseek-ai/dsh` for current
+# values; CI's matrix pins the lines this bridge claims), so an upstream break
+# shows up here — red, in the open — instead of as user breakage after a
+# release.
 #
 # Reading the result:
 #   green → the bridge still works on that line; widen the peer range when the
@@ -35,6 +36,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
+      - name: Cross-generation link check
+        run: node scripts/compat-check.mjs
       - name: Install the canary CLI
         run: |
           npm install -g @deepseek-ai/dsh@alpha
