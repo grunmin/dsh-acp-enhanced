@@ -152,7 +152,9 @@ async function main() {
       additionalDirectories: [extraRoot],
       mcpServers: [],
     })
-    check('session/load accepts updated additionalDirectories', typeof reloaded?.sessionId === 'string' || reloaded !== undefined)
+    check('session/load accepts updated additionalDirectories',
+      reloaded !== undefined && Array.isArray(reloaded.configOptions),
+      JSON.stringify(Object.keys(reloaded ?? {})))
     const bad = await rpc('session/new', {
       cwd: process.cwd(),
       additionalDirectories: ['relative/path'],
@@ -194,10 +196,15 @@ async function main() {
       prompt: [{ type: 'text', text: '/model' }],
     })
     check('/model settles without a model turn', model.stopReason === 'end_turn')
-    check('/model lists the catalog', notifications.some(
+    // Assert against the session's OWN route, not a hardcoded model id: the
+    // catalog lists only the routed provider's models, so ids from another
+    // provider legitimately never appear (this hardcoded expectation failed
+    // on every non-DeepSeek-routed profile).
+    const modelRoute = String((created.configOptions ?? []).find((o) => o.id === 'model')?.currentValue ?? '')
+    check('/model lists the catalog', modelRoute.length > 0 && notifications.some(
       (n) => n.sessionId === sessionId && n.update?.sessionUpdate === 'agent_message_chunk'
-        && n.update.content?.text?.includes('deepseek-v4-flash'),
-    ))
+        && n.update.content?.text?.includes(modelRoute),
+    ), modelRoute)
 
     // ── config options: model switch + effort resilience (all keyless) ──────
     // Regression 1 (the "cannot switch models" report): Zed re-applies its

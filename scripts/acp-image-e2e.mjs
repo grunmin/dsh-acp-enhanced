@@ -7,10 +7,12 @@
  * 2. A real image prompt (1x1 PNG) is accepted, stored, and answered by the
  *    vision model (deepseek-v4-flash-vision-exp) — proves the full
  *    conversion path: ACP image block → validate/saveImage → harness block.
- * 3. The same image prompt against a text-only model fails at the model
- *    layer (clear UNSUPPORTED, not a wire-level image rejection).
+ * 3. The same image prompt against a text-only model is accepted at the wire:
+ *    the attachment is durably saved and the model can reference it (e.g. via
+ *    a tool reading the file); only the reply would lack vision.
  * 4. With the attachment row disabled the capability is NOT advertised and
- *    an image prompt is refused with invalid params — the legacy fallback.
+ *    an image prompt is refused with invalid params (`unsupported prompt
+ *    content type: image`) — the legacy fallback.
  *
  * Uses the checkout via `dsh plugin --profile <name> add link:<repo>`.
  * Requires a real API key for the vision-model leg (skipped keyless).

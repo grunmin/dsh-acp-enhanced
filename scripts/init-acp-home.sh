@@ -41,10 +41,18 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # therefore no repo-local .bin/dsh).
 CLI=""
 if [ -n "${DSH_PATH:-}" ]; then
-  if [ -x "${DSH_PATH}" ]; then
+  # Directory first (a checkout with node_modules/.bin/dsh), then an explicit
+  # binary — `test -x` is true for searchable directories, so probing the bare
+  # path as a binary first would exec a directory.
+  if [ -d "${DSH_PATH}" ]; then
+    if [ -x "${DSH_PATH}/node_modules/.bin/dsh" ]; then
+      CLI="${DSH_PATH}/node_modules/.bin/dsh"
+    else
+      echo "init-acp-home: DSH_PATH is a directory but holds no node_modules/.bin/dsh ('${DSH_PATH}')" >&2
+      exit 127
+    fi
+  elif [ -f "${DSH_PATH}" ] && [ -x "${DSH_PATH}" ]; then
     CLI="${DSH_PATH}"
-  elif [ -x "${DSH_PATH}/node_modules/.bin/dsh" ]; then
-    CLI="${DSH_PATH}/node_modules/.bin/dsh"
   else
     echo "init-acp-home: DSH_PATH is set but holds no dsh ('${DSH_PATH}')" >&2
     exit 127

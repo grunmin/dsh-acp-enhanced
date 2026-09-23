@@ -181,6 +181,24 @@ try {
   check('a profile left under ~/.dsh-acp is pointed out',
     migrated.status === 127 && /Found an existing profile at/.test(migrated.stderr) && /DSH_HOME=/.test(migrated.stderr),
     `status=${migrated.status} stderr=${JSON.stringify(migrated.stderr.trim().split('\n').slice(-2).join(' | '))}`)
+
+  // 10. DSH_PATH contract: a directory is a checkout root (its
+  //     node_modules/.bin/dsh runs), never exec'd as a binary — `test -x` is
+  //     true for searchable directories, which used to swallow the form.
+  const checkout = join(scratch, 'checkout')
+  mkdirSync(join(checkout, 'node_modules', '.bin'), { recursive: true })
+  writeFileSync(join(checkout, 'node_modules', '.bin', 'dsh'), readFileSync(fakeDsh, 'utf8'))
+  chmodSync(join(checkout, 'node_modules', '.bin', 'dsh'), 0o755)
+  const viaDir = run(home, { DSH_PATH: checkout })
+  check('DSH_PATH as a checkout directory runs its nested CLI',
+    viaDir.status === 0 && /home=/.test(viaDir.stdout),
+    `status=${viaDir.status} stderr=${JSON.stringify(viaDir.stderr.trim().split('\n')[0] ?? '')}`)
+  const bareDirPath = join(scratch, 'empty-dir-holder')
+  mkdirSync(bareDirPath, { recursive: true })
+  const emptyDir = run(home, { DSH_PATH: bareDirPath })
+  check('a DSH_PATH directory without a nested CLI fails 127 with a named cause',
+    emptyDir.status === 127 && /directory but holds no node_modules\/\.bin\/dsh/.test(emptyDir.stderr),
+    `status=${emptyDir.status} stderr=${JSON.stringify(emptyDir.stderr.trim())}`)
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }

@@ -25,7 +25,7 @@
  * Usage: node scripts/acp-doctor.mjs [--profile <name>] [--home <dir>] [--timeout <ms>]
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,11 +62,15 @@ const readJson = (file) => {
 /** The bridge's declared harness range, from its own package.json. */
 const supportedRange = readJson(join(repoDir, 'package.json'))?.peerDependencies?.['@deepseek-ai/dsh-agent'] ?? '(undeclared)'
 
-/** Resolve the dsh CLI the same way the launcher does. */
+/** Resolve the dsh CLI the same way the launcher does (directory-first DSH_PATH). */
 function resolveCli() {
   const explicit = process.env.DSH_PATH
   if (explicit !== undefined && explicit.length > 0) {
-    if (existsSync(explicit) && !explicit.endsWith('/')) return { path: explicit, source: 'DSH_PATH' }
+    // Same contract as dsh-acp-zed.sh / init-acp-home.sh: a directory means
+    // "checkout root" (node_modules/.bin/dsh inside), a file means the binary.
+    // (The old trailing-slash convention is subsumed: stat says directory.)
+    const isDir = existsSync(explicit) && statSync(explicit).isDirectory()
+    if (!isDir && existsSync(explicit)) return { path: explicit, source: 'DSH_PATH' }
     const nested = join(explicit, 'node_modules', '.bin', 'dsh')
     if (existsSync(nested)) return { path: nested, source: 'DSH_PATH' }
     return { path: undefined, source: 'DSH_PATH (holds no dsh)' }
