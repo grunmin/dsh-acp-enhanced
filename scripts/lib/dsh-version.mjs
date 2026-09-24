@@ -10,7 +10,7 @@
  *
  * Also usable as a command, which is how the bash launcher asks:
  *
- *   node dsh-version.mjs --supported '^0.1.5-rc.2 || ^0.1.6-alpha.1' 0.1.5-rc.2
+ *   node dsh-version.mjs --supported '^0.1.7-alpha.1' 0.1.7-alpha.1
  *   → exit 0 supported, 1 outside the range, 2 unparseable
  */
 import { pathToFileURL } from 'node:url'

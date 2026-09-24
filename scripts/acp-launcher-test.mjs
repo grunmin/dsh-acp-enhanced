@@ -16,6 +16,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { floorOfRange } from './lib/dsh-version.mjs'
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const launcher = join(repoDir, 'scripts/dsh-acp-zed.sh')
@@ -24,6 +25,9 @@ const scratch = mkdtempSync(join(tmpdir(), 'acp-launcher-test-'))
  *  assertion cannot drift when the declared floor moves. */
 const declaredRange = JSON.parse(readFileSync(join(repoDir, 'package.json'), 'utf8'))
   .peerDependencies['@deepseek-ai/dsh-agent']
+/** A version inside that range, for the "supported CLI" fixtures: derived from
+ *  the same manifest so those fixtures cannot drift either. */
+const supportedVersion = floorOfRange(declaredRange) ?? '0.1.7-alpha.1'
 
 let failed = 0
 function check(label, ok, detail = '') {
@@ -34,7 +38,7 @@ function check(label, ok, detail = '') {
 /** A stand-in dsh that echoes the environment the launcher handed it. */
 const fakeDsh = join(scratch, 'fake-dsh')
 writeFileSync(fakeDsh, `#!/bin/bash
-if [ "\${1:-}" = "--version" ]; then echo "\${FAKE_DSH_VERSION:-0.1.5-rc.2}"; exit 0; fi
+if [ "\${1:-}" = "--version" ]; then echo "\${FAKE_DSH_VERSION:-${supportedVersion}}"; exit 0; fi
 if [ -n "\${FAKE_DSH_FAIL:-}" ]; then echo "\${FAKE_DSH_FAIL}" >&2; exit 1; fi
 echo "home=\${DSH_HOME:-<unset>} profile_dir=\${DSH_ACP_PROFILE_DIR:-<unset>} args=$*"
 `)
@@ -85,12 +89,12 @@ try {
   const drift = run(home)
   check('mismatched closure still boots', drift.status === 0, `status=${drift.status}`)
   check('mismatched closure warns on stderr',
-    /warning/.test(drift.stderr) && drift.stderr.includes('dsh-agent 0.1.1-rc.2') && drift.stderr.includes('0.1.5-rc.2'),
+    /warning/.test(drift.stderr) && drift.stderr.includes('dsh-agent 0.1.1-rc.2') && drift.stderr.includes(supportedVersion),
     JSON.stringify(drift.stderr.trim()))
   check('the warning never reaches stdout (ACP wire)', !/warning/.test(drift.stdout), JSON.stringify(drift.stdout.trim()))
 
   // 4. Matching closure: silent.
-  seedClosure(home, '0.1.5-rc.2')
+  seedClosure(home, supportedVersion)
   const quiet = run(home)
   check('matching closure is silent', quiet.status === 0 && !/warning/.test(quiet.stderr),
     `status=${quiet.status} stderr=${JSON.stringify(quiet.stderr.trim())}`)
@@ -147,7 +151,7 @@ try {
     `status=${oldCli.status} stdout=${JSON.stringify(oldCli.stdout.trim().slice(0, 60))}`)
   check('the too-old warning never reaches stdout',
     !/below the range/.test(oldCli.stdout), JSON.stringify(oldCli.stdout.trim().slice(0, 60)))
-  const newCli = run(home, { FAKE_DSH_VERSION: '0.1.5-rc.2' })
+  const newCli = run(home, { FAKE_DSH_VERSION: supportedVersion })
   check('a supported CLI is not warned about', !/below the range/.test(newCli.stderr), JSON.stringify(newCli.stderr.trim()))
   const oddCli = run(home, { FAKE_DSH_VERSION: 'weird' })
   check('an unreadable CLI version is ignored, not warned about',

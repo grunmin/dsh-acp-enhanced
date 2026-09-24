@@ -1,9 +1,13 @@
 name: canary (next dsh line)
 
 # Early warning for harness breaking changes. The `alpha` dist-tag carries the
-# line after the pinned one (`alpha` = 0.1.6-alpha.2 while `latest`/`next` =
-# 0.1.5-rc.2), so an upstream break shows up here — red, in the open — instead of
-# as user breakage after a release.
+# line after the pinned one, so an upstream break shows up here — red, in the
+# open — instead of as user breakage after a release.
+#
+# As of the 0.1.7 preset-plane migration the pin *is* `alpha`
+# (`@deepseek-ai/dsh@alpha` = 0.1.7-alpha.1, while `latest` = 0.1.5-rc.2 and
+# `next` = 0.1.5-rc.3), so today this job re-tests the pinned line; it becomes a
+# true canary again the moment upstream moves `alpha` past the pin.
 #
 # Reading the result:
 #   green → the bridge still works on that line; widen the peer range when the
