@@ -11,9 +11,14 @@
  * (pinned to the newest generation) can never mask a link-time break against
  * an older one.
  *
- * The service-side generation differences are gone: the bridge targets one
- * declared API line (floor 0.1.5-rc.2) and does not probe service shapes at
- * runtime. Behaviour on a live host is covered by the e2e runs in scripts/.
+ * The supported lines share the `agent/assistant-stream` frames API and the
+ * declared service surface; the one runtime difference is the agent-preset
+ * roster, whose packaging changed in 0.1.7 (`dsh-agent-presets` → a registry
+ * plus one declaration row per preset). That difference is confined to
+ * `cordis.patch.yml` (a generation-gated row) and one duck-typed member probe,
+ * `presets.resolveMountable` → `presets.resolve`; both are exercised by the
+ * boot matrix in `.github/workflows/ci.yml`, not here. Behaviour on a live host
+ * is covered by the e2e runs in scripts/.
  *
  * Usage: node scripts/compat-check.mjs [--registry <npm-registry>]
  *   --registry defaults to the public npm registry: prerelease harness
@@ -37,14 +42,18 @@ const bridgeDeps = {
   zod: '^4.4.3',
 }
 
-// The supported API generations, both on the `agent/assistant-stream` frames
-// line (0.1.3-alpha.2+): "frames" is the pinned rc line, "framesNext" the alpha
-// line that supersedes it. Each mirrors the repo devDependency ranges (the same
-// ranges the pinned @deepseek-ai/dsh CLI declares), so a fresh resolution
-// matches what a real profile boot heals.
+// The supported API generations, all on the `agent/assistant-stream` frames
+// line (0.1.3-alpha.2+) and all consuming the same declared service surface:
+// "frames" is the pinned rc line, "framesNext" the 0.1.6 alpha line, and
+// "framesRegistry" the 0.1.7 line that replaced the preset roster. Each mirrors
+// the repo devDependency ranges (the same ranges the pinned @deepseek-ai/dsh
+// CLI declares), so a fresh resolution matches what a real profile boot heals.
+// `roster` names the agent-preset package that line ships, which the row the
+// bridge's bundle patch inserts must also match.
 const GENERATIONS = {
   frames: {
     label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
+    roster: '@deepseek-ai/dsh-agent-presets',
     deps: {
       '@deepseek-ai/cordis': '^4.0.2',
       '@deepseek-ai/cordis-plugin-include': '^1.0.7',
@@ -66,6 +75,7 @@ const GENERATIONS = {
   },
   framesNext: {
     label: '0.1.3-alpha.2+ (assistant-stream frames API, alpha line)',
+    roster: '@deepseek-ai/dsh-agent-presets',
     deps: {
       '@deepseek-ai/cordis': '^4.0.2',
       '@deepseek-ai/cordis-plugin-include': '^1.0.7',
@@ -83,6 +93,34 @@ const GENERATIONS = {
       '@deepseek-ai/dsh-skill': '^0.1.6-alpha.2',
       '@deepseek-ai/dsh-tools': '^0.1.6-alpha.2',
       '@deepseek-ai/dsh-user-approval': '^0.1.6-alpha.2',
+    },
+  },
+  // 0.1.7 retires `@deepseek-ai/dsh-agent-presets` (last release 0.1.6-alpha.2)
+  // in favour of `@deepseek-ai/dsh-agent-preset-registry` plus one
+  // `@deepseek-ai/dsh-agent-preset` declaration per preset. Both are installed
+  // here because the bridge's bundle patch names them; the exact pins mirror
+  // what @deepseek-ai/dsh@0.1.7-rc.2 itself declares.
+  framesRegistry: {
+    label: '0.1.7+ (agent-preset registry API, rc line)',
+    roster: '@deepseek-ai/dsh-agent-preset-registry',
+    deps: {
+      '@deepseek-ai/cordis': '~4.0.4',
+      '@deepseek-ai/cordis-plugin-include': '~1.0.9',
+      '@deepseek-ai/cordis-plugin-loader': '~1.0.5',
+      '@deepseek-ai/dsh': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-agent': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-agent-instructions': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-agent-preset': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-agent-preset-registry': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-invariants': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-llm': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-mcp-client': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-permission-presets': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-session': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-session-query': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-skill': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-tools': '0.1.7-rc.2',
+      '@deepseek-ai/dsh-user-approval': '0.1.7-rc.2',
     },
   },
 }
@@ -112,8 +150,8 @@ for (const [name, generation] of Object.entries(GENERATIONS)) {
     cpSync(join(repoDir, 'package.json'), join(scratch, 'package.json'))
     const host = await import(pathToFileURL(join(scratch, 'lib', 'index.js')).href)
     const llmVersion = (await import(pathToFileURL(join(scratch, 'node_modules', '@deepseek-ai', 'dsh-llm', 'package.json')).href, { with: { type: 'json' } })).default.version
-    const presetsKeys = Object.keys(await import(pathToFileURL(join(scratch, 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'lib', 'index.js')).href))
-    console.log(`PASS  [${name}] bridge imports clean under ${generation.label} (dsh-llm ${llmVersion}; dsh-agent-presets exports ${presetsKeys.length} symbols; bridge exports ${Object.keys(host).length})`)
+    const presetsKeys = Object.keys(await import(pathToFileURL(join(scratch, 'node_modules', ...generation.roster.split('/'), 'lib', 'index.js')).href))
+    console.log(`PASS  [${name}] bridge imports clean under ${generation.label} (dsh-llm ${llmVersion}; ${generation.roster} exports ${presetsKeys.length} symbols; bridge exports ${Object.keys(host).length})`)
   } catch (error) {
     console.log(`FAIL  [${name}] bridge failed to import under ${generation.label}: ${error.message}`)
     failed += 1
