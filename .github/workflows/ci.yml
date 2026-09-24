@@ -14,12 +14,14 @@ jobs:
     strategy:
       matrix:
         node-version: [22, 24]
-        # Both lines the peer range claims: the pin (0.1.5-rc.2) and the 0.1.6
-        # alpha line. Every job below boots a real profile, so a green run is
-        # boot-time verification of the support claim — the old matrix had no
+        # Every line the peer range claims: the pin (0.1.5-rc.2), the 0.1.6 alpha
+        # line, and 0.1.7 — which repackaged the agent-preset roster, so this
+        # leg is the only coverage of the generation-gated row in
+        # cordis.patch.yml. Every job below boots a real profile, so a green run
+        # is boot-time verification of the support claim — the old matrix had no
         # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
         # `.github/workflows/canary.yml` watches the line after these.
-        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2']
+        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
