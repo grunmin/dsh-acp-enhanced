@@ -17,7 +17,10 @@
  *
  * It always prints the environment (CLI, home, profile, every bundle + version,
  * the supported peer range) and, on failure, the offending bundle plus the exact
- * fix command. Exit code 0 = handshake OK, 1 = classified failure.
+ * fix command. Exit code 0 = handshake OK; 1 = a classified failure, or a
+ * **degraded** boot — an entry that never activated leaves ACP working with a
+ * feature silently missing, which is exactly the state a handshake-only check
+ * (and so the old result) called READY.
  *
  * Usage: node scripts/acp-doctor.mjs [--profile <name>] [--home <dir>] [--timeout <ms>]
  */
@@ -197,6 +200,39 @@ function evidenceLines(lines) {
   return picked.length > 0 ? picked : lines.slice(-6)
 }
 
+/**
+ * Loader entries that never activated.
+ *
+ * A rejected entry does not take the profile down — `initialize` and
+ * `session/new` both succeed — so the failure mode is a feature that silently
+ * is not there. That is how a third-party plugin importing an export 0.1.7
+ * removed (`dsh-settings` dropped `SettingsProvider`) disappeared from a
+ * working profile: one stderr warning, no tool, RESULT READY. The boot's own
+ * report is therefore promoted into the result. Disabled rows are not counted
+ * (they are skipped before any import), and the patch applier's benign
+ * "entry not found" notes are a different warning entirely.
+ *
+ * @param lines - the boot's stderr lines.
+ * @returns one line per inactive entry (or per skipped bundle), or none.
+ */
+function inactiveEntries(lines) {
+  const text = lines.join('\n')
+  const count = /warning: (\d+) entr(?:y|ies) did not activate/.exec(text)?.[1]
+  if (count === undefined) return []
+  const inactive = []
+  for (const line of lines) {
+    const match = /^(\S+) \(([^)]+)\): (\S.*)$/.exec(line.trim())
+    if (match !== null) {
+      const reason = match[3]
+      inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
+    }
+  }
+  for (const line of lines) {
+    if (/skipping profile bundle/.test(line)) inactive.push(line.trim())
+  }
+  return inactive.length > 0 ? inactive : [`${count} entry/entries did not activate (see the log above)`]
+}
+
 if (!existsSync(profileDir)) {
   console.log('\nRESULT  FAIL — the profile does not exist, so nothing can boot.')
   console.log(`FIX     ${cli.path ?? 'dsh'} plugin --profile ${profileName} add link:${repoDir}`)
@@ -322,6 +358,16 @@ if (handshake?.result !== undefined && exited === undefined && failure === undef
   console.log(`BOOT    OK — ACP initialize answered (agent ${agentInfo?.name ?? '?'} ${agentInfo?.version ?? '?'}), the profile settled, and session/new opened a thread.`)
   if (closureVersion !== undefined && cliVersion !== undefined && closureVersion !== cliVersion) {
     console.log(`WARN    the shared closure holds @deepseek-ai/dsh-agent ${closureVersion} but the CLI is ${cliVersion}; restart the other dsh processes under this home.`)
+  }
+  const inactive = inactiveEntries(stderrLines)
+  if (inactive.length > 0) {
+    console.log(`DEGRADED ${inactive.length} loader ${inactive.length === 1 ? 'entry' : 'entries'} never activated — the boot`)
+    console.log('        continued, so this is a missing feature rather than a failure:')
+    for (const line of inactive) console.log(`        ${line}`)
+    console.log('FIX     upgrade that bundle (a harness export it imports may have been renamed or')
+    console.log('        removed in this dsh line), or take it out of the profile.')
+    console.log(`RESULT  DEGRADED — ACP works; ${inactive.length} loader ${inactive.length === 1 ? 'entry is' : 'entries are'} not running.`)
+    process.exit(1)
   }
   console.log('RESULT  READY')
   process.exit(0)
