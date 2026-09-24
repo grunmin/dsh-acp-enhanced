@@ -69,7 +69,7 @@
       "members": ["current", "names", "defaultPreset", "selectFor", "resolve", "optionOf", "set"]
     },
     "agentPresets": {
-      "declaredIn": "docs/capability-seams.md: ctx.agentPresets (owner packages/preset/agent-presets); abstract class members in lib/types/index.d.ts",
+      "declaredIn": "docs/capability-seams.md: ctx.agentPresets. Two owning packages across the supported lines, same service name: packages/preset/agent-presets through 0.1.6 (abstract class members in its lib/types/index.d.ts) and packages/preset/agent-preset-registry from 0.1.7 (declares `Context { agentPresets: AgentPresetRegistry }` in lib/types/index.d.ts). `resolveMountable`, `read`, `copy` and `remove` exist only on the 0.1.5/0.1.6 roster; the bridge calls `resolveMountable` only behind a member probe and never calls the other three.",
       "members": ["list", "resolve", "resolveMountable", "mount", "recompose", "composedPreset", "composeFrom", "read", "readDocument", "copy", "remove", "select", "serviceFor"]
     },
     "sessionPersistence": {
