@@ -34,13 +34,15 @@ ACP 线上。
   绝不出现空的 "unknown" 选择
 - **权限预设**：read-only / workspace-write / full-access 三种会话模式
 - **审批**：工具调用弹出原生 allow-once / reject-once 审批
-- **Agent 预设**：每个会话的模型侧组合（工具 + 提示词段）来自 dsh agent-presets
+- **Agent 预设**：每个会话的模型侧组合（工具 + 提示词段）来自 dsh agent-preset
   名册。`standard` 为完整编码 agent（默认），`minimal`（极简模式）只有裸 shell +
   文件编辑器，**不含** subagent/web/todo/plan 等工具——极简 agent 不会泄漏任何
-  host 层工具；`code` 与 `cordis` 随 dsh CLI 附带，`~/.dsh/.agent-presets` 下你
-  自己的预设也会自动出现。通过 `agent_preset` 配置项、`/preset` 命令或
+  host 层工具；`ptc` 与 `cordis` 随 dsh CLI 附带。**自建预设写在 profile 里**
+  （见「自建 preset」）——dsh 0.1.7 起不再扫描 `~/.dsh/.agent-presets`。
+  通过 `agent_preset` 配置项、`/preset` 命令或
   `DSH_ACP_PRESET` 环境变量（会话默认）选择；**仅空会话可切换**（还没跑过对话），
-  历史记录永远不会横跨两套工具面
+  历史记录永远不会横跨两套工具面。配置了一个本名册已没有的 preset 不会把面板弄死：
+  空会话会改用名册默认值组合，并在 stderr 说明。
 
 ### Zed 深度集成
 
@@ -271,10 +273,11 @@ profile 是一个**单一故障域**：`cordis-plugin-loader` 会等待每个条
 `@deepseek-ai/dsh-base` 随 CLI 一起发布，版本天然等同于启动它的 CLI；其他任何 bundle 都是
 第三方，其依赖闭包可能漂移。额外插件请挂到「坏了只废掉一个 preset」的位置：
 
-- **只新增模型侧工具/命令的插件** → 把行写进某个 preset composition。用户 preset 放在
-  `$DSH_HOME/.agent-presets/<id>/`（组合写 `agent.cordis.yml`，选择器里的名称写
-  `preset.yml`）；roster 会自动发现，ACP 的 `agent_preset` 下拉也会列出。组合加载失败的
-  preset 只会被标记为 broken 并从列表里剔除，不会拖垮进程。
+- **只新增模型侧工具/命令的插件** → 把行写进某个 preset composition。**0.1.7 线**上是
+  profile 用户层里的一条 `@deepseek-ai/dsh-agent-preset` 行（见「自建 preset」）；
+  0.1.5/0.1.6 上是 `$DSH_HOME/.agent-presets/<id>/` 目录（组合写 `agent.cordis.yml`，
+  选择器里的名称写 `preset.yml`）。两种方式下 ACP 的 `agent_preset` 下拉都会列出它；
+  组合加载失败的 preset 只会被标记为 broken 并从列表里剔除，不会拖垮进程。
 - **需要配置宿主服务的插件**（例如要覆写宿主 `web` 行 `searchProvider` 的搜索 provider）
   → 它属于宿主组合，也就是 profile。这是有意的取舍：接受启动路径上的风险，并在每次改动
   后重跑 doctor。
@@ -358,6 +361,40 @@ standard/ptc/minimal/cordis 组合打进去、并作为只读 `system` root 前�
 不提供 `agent_preset`）。
 
 `DSH_ACP_PRESET`、`agent_preset` 配置项与 `/preset` 在每条线上行为一致。
+
+#### 自建 preset
+
+0.1.7 起名册变成了由声明行喂给 registry：它**不扫描任何用户目录**，因此
+`$DSH_HOME/.agent-presets/<id>/` 不再被收录，profile 默认值指向这类 preset 时每个
+`session/new` 都会以 `Unknown agent preset: <id>` 失败。把预设写在 registry 真正读的地方：
+
+```yaml
+# ~/.dsh/profiles/acp-enhanced/cordis.patch.yml
+- insert:
+    - id: preset-my-agent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: my-agent              # DSH_ACP_PRESET / 下拉框使用的 id
+        name: 我的 agent            # 可选；0.1.7 只本地化内置 id 的展示名
+        description: …            # 可选
+        order: 5                  # 可选
+        plugins:                  # 整套组合，形状同官方 preset
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+```
+
+官方 `presets/*.patch.yml` 层（以及本桥内联的那四条）遵循的两条规则，因为 preset 就是
+loader 要挂载的数据：
+
+- **整装重述。** preset 行携带完整的 `config.plugins` 列表——不存在「只 patch 已有 preset
+  的某个子行」——所以 fork `standard` 必须按新代的行集重新 baseline（0.1.7 把
+  `workflow-worker-thread` 换成了 `workflow-ptc`）。差异只在配置（模型路由、审批、沙箱）时
+  优先放在宿主面：只有**工具集**不同才值得 fork。
+- **默认值写在当代读它的地方。** 0.1.7 上是 `agent-preset-registry.config.default`，
+  ≤ 0.1.6 上是 `agent-presets.config.default`（或 Settings 里的 `selectedDefault`）。
+  profile 指向一个已不存在的 preset 时：*空*会话仍可用（改用名册默认值并在 stderr 说明），
+  但**恢复**一个跑过它的会话仍会失败——把另一套工具面接到已有转录上，正是「仅空会话可切换」
+  这条规则要防的事。
 
 ### 从已发布的 ≤ 0.7.0 升级
 
@@ -471,6 +508,8 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | 无法切换模型 | `ACP_DEBUG=1 dsh --profile acp-enhanced`，然后尝试切换 | 携带的 `reasoning_effort` 在目标模型上不受支持：本桥按模型记住上次使用的强度（随 profile 持久化），会回退到该模型默认值而不是让切换失败。另检查路由是否真实——幽灵 provider 会被过滤，只广播 `config.provider` 的模型 |
 | 上下文用量不显示 | 线程里执行 `/status` | 选到了不可路由的"幽灵 provider"；确认 profile 的 provider 指向真实路由 |
 | 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
+| 升级 dsh 后报 `Unknown agent preset: <id>` | `ls $DSH_HOME/.agent-presets` 与 profile 的 `cordis.patch.yml` | 该 preset 已不在名册里——0.1.7 起不再扫描 `$DSH_HOME/.agent-presets`。把它改成一条 `@deepseek-ai/dsh-agent-preset` 声明行（见「自建 preset」）；0.9.1 下*空*会话会先用名册默认值打开（stderr 有说明），但恢复已跑过它的线程在补上行之前仍然失败 |
+| profile 以前有的能力静默消失（例如 `web_search`） | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> loader entries never activated` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。给这条 dsh 线升级该 bundle——`dsh-free-search` 在 0.1.7 上需要 ≥ 0.4.39，因为 0.4.24 import 的 `SettingsProvider` 已被 `dsh-settings` 删除——或直接移除它 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
 | 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
@@ -525,8 +564,8 @@ undefined (reading 'length')`（PersistenceCoordinator）崩掉。`pnpm-workspac
 
 Agent 预设接管了模型侧相关行：自带 `cordis.patch.yml` 会禁用 preset 拥有的 dsh-base
 行（tool-bash/fs/subagent/todo/web/…——与官方 dsh-web-app/tui 清单逐行一致，仅少
-`hmr`；清单保持跨代通用：某一代没有的行会被 patch applier 告警并跳过），并挂载 `agent-presets` 名册（默认 `standard`；`code`/`minimal`/`cordis`
-随 dsh CLI 附带，`~/.dsh/.agent-presets` 下的自定义预设目录自动收录）。bundle 自带
+`hmr`；清单保持跨代通用：某一代没有的行会被 patch applier 告警并跳过），并挂载 `agent-presets` 名册（默认 `standard`；`ptc`/`minimal`/`cordis`
+随 dsh CLI 附带；自建预设从 0.1.7 起写成 `@deepseek-ai/dsh-agent-preset` 声明行，见「自建 preset」）。bundle 自带
 patch 会自动装配（package.json `dsh.bundle.patch`）——**不要**把它复制进 profile
 的用户层 `cordis.patch.yml`，否则 loader 在启动时因重复 entry id 拒绝装配。**升级**
 一个已有自定义用户层 patch 的 profile 时，用户层只保留你自己的定制行（例如

@@ -39,13 +39,17 @@ over the ACP wire.
 - **Permission presets**: read-only / workspace-write / full-access session modes
 - **Approval**: native allow-once / reject-once prompts per tool call
 - **Agent presets**: per-session model-facing composition (tools + prompt sections)
-  from the dsh agent-presets roster. `standard` is the full coding agent (default),
+  from the dsh agent-preset roster. `standard` is the full coding agent (default),
   `minimal` (极简模式) is a bare shell + files editor with **no** subagent/web/todo/plan
-  tools — nothing from the host layer leaks into a minimal agent; `code` and `cordis`
-  ship alongside, and your own presets under `~/.dsh/.agent-presets` appear too.
+  tools — nothing from the host layer leaks into a minimal agent; `ptc` and `cordis`
+  ship alongside. Your own presets are declared in the profile (see
+  [Your own presets](#your-own-presets)) — dsh 0.1.7 no longer discovers
+  `~/.dsh/.agent-presets`.
   Choose via the `agent_preset` config option, the `/preset` command, or the
   `DSH_ACP_PRESET` env var (per-session default); switching is only allowed while the
   session is still blank (no turn has run), so history never straddles two tool sets.
+  A configured preset this roster no longer has does not close the panel: a blank
+  session composes under the roster default and says so on stderr.
 
 ### Zed deep integration
 
@@ -317,12 +321,13 @@ Keep `dsh.profile.bundles` at exactly the two rows that cannot mismatch their ow
 boots it; every other bundle is a third party whose dependency closure can drift. Mount
 extra plugins where a failure costs one preset instead of the whole editor session:
 
-- **Plugin adds only model-facing tools/commands** → declare its row in a preset
-  composition. User presets live in `$DSH_HOME/.agent-presets/<id>/` (`agent.cordis.yml`
-  for the composition, `preset.yml` for the picker label); the roster discovers them
-  automatically and the ACP `agent_preset` dropdown lists them. A preset whose
-  composition fails to load is reported as broken and simply not offered, instead of
-  killing the process.
+- **Plugin adds only model-facing tools/commands** → declare its row inside a preset
+  composition. On the **0.1.7 line** that is a `@deepseek-ai/dsh-agent-preset` row in the
+  profile's user layer (see [Your own presets](#your-own-presets)); on 0.1.5/0.1.6 it is a
+  directory under `$DSH_HOME/.agent-presets/<id>/` (`agent.cordis.yml` for the composition,
+  `preset.yml` for the picker label). Either way the ACP `agent_preset` dropdown lists it,
+  and a preset whose composition fails to load is reported as broken and simply not
+  offered, instead of killing the process.
 - **Plugin must configure a host service** (e.g. a search provider overriding the host
   `web` row's `searchProvider`) → it belongs in the host composition, i.e. the profile.
   That is a deliberate trade: accept the boot-path risk, and re-run the doctor after any
@@ -417,6 +422,43 @@ not offered).
 
 `DSH_ACP_PRESET`, the `agent_preset` config option and `/preset` behave the same on every
 line.
+
+#### Your own presets
+
+From 0.1.7 the roster is a registry fed by declaration rows: it scans **no** user
+directory, so `$DSH_HOME/.agent-presets/<id>/` stops being discovered and a profile whose
+default names one of those presets fails every `session/new` with
+`Unknown agent preset: <id>`. Author your preset where the registry reads:
+
+```yaml
+# ~/.dsh/profiles/acp-enhanced/cordis.patch.yml
+- insert:
+    - id: preset-my-agent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: my-agent              # the id DSH_ACP_PRESET / the dropdown uses
+        name: My agent            # optional; 0.1.7 only localizes shipped ids
+        description: …            # optional
+        order: 5                  # optional
+        plugins:                  # the composition, in the shipped preset's shape
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+```
+
+Two rules the shipped `presets/*.patch.yml` layers (and this bridge's inlined copy) follow,
+because a preset is data the loader mounts:
+
+- **restate the whole composition.** A preset row carries the complete `config.plugins`
+  list — there is no "patch a child of an existing preset" — so a fork of `standard` has
+  to be re-baselined onto the new line's row set (0.1.7 renamed `workflow-worker-thread`
+  to `workflow-ptc`). Prefer the host plane when your only difference is configuration
+  (model routes, approval, sandbox): fork a preset only for a different **tool set**.
+- **set the default where the line reads it.** `agent-preset-registry.config.default` on
+  0.1.7, `agent-presets.config.default` on ≤ 0.1.6 (or the Settings surface, which writes
+  `selectedDefault`). A profile that names a preset it no longer declares still works for a
+  *blank* session — it composes under the roster default and logs the substitution on
+  stderr — and fails to *resume* a session that already ran it, since composing a different
+  tool set onto an existing transcript is exactly what the blank-only rule forbids.
 
 ### Upgrading from a published ≤ 0.7.0
 
@@ -543,6 +585,8 @@ the ACP wire), so the agent log already carries the layer and the fix.
 | Cannot switch models | `ACP_DEBUG=1 dsh --profile acp-enhanced`, then try the switch | The carried `reasoning_effort` is unsupported on the target: the bridge remembers the last effort per model (per-profile JSON) and falls back to the model's default rather than failing the switch. Also check the route is real — phantom providers are filtered, only `config.provider`'s models are advertised |
 | Context usage missing | `/status` in the thread | A "phantom provider" route was picked; point the profile's provider at a real route |
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
+| `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
+| A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> loader entries never activated` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
 | Need detailed diagnostics | — | `ACP_DEBUG=1` (stderr lifecycle trace) and `ACP_LOG=/tmp/acp.jsonl` (per-event JSONL with timings) |
 
@@ -607,8 +651,9 @@ the dsh-base rows a preset owns (tool-bash/fs/subagent/todo/web/… — exactly 
 dsh-web-app/tui list minus `hmr`, kept version-agnostic across generations: a row a given
 generation does not ship is warned and skipped by the patch applier) and mounts the
 `agent-presets` roster (`standard`
-default; `code`/`minimal`/`cordis` ship with the dsh CLI, your own preset dirs under
-`~/.dsh/.agent-presets` are picked up automatically). The bundle's own patch applies
+default; `ptc`/`minimal`/`cordis` ship with the dsh CLI; your own presets are declared as
+`@deepseek-ai/dsh-agent-preset` rows from 0.1.7 on — see
+[Your own presets](#your-own-presets)). The bundle's own patch applies
 automatically (package.json `dsh.bundle.patch`) — do **not** copy it into the profile's
 user-layer `cordis.patch.yml`, or the loader rejects the duplicate entry ids at boot.
 When **upgrading** a profile that already carries a customized user-layer patch, keep
