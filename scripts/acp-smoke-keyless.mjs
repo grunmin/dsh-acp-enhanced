@@ -277,6 +277,68 @@ async function main() {
       console.log('SKIP  model switch (only one advertised model)')
     }
 
+    // Regression 4: a configured preset this roster does not have must not make
+    // every session unopenable. dsh 0.1.7 stopped discovering
+    // `$DSH_HOME/.agent-presets` (the roster became a registry fed by
+    // declaration rows), so a stale `DSH_ACP_PRESET` / profile default is a
+    // normal upgrade state rather than a crash: a *blank* session composes
+    // under a preset the roster does offer and says so on stderr.
+    {
+      const bogus = 'acp-smoke-no-such-preset'
+      const fallbackChild = spawn('dsh', ['--profile', profile], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, DSH_ACP_PRESET: bogus },
+      })
+      let fallbackStderr = ''
+      let fallbackBuffer = ''
+      const fallbackPending = new Map()
+      fallbackChild.stderr.on('data', (data) => { fallbackStderr += String(data) })
+      fallbackChild.stdout.on('data', (data) => {
+        fallbackBuffer += String(data)
+        const lines = fallbackBuffer.split('\n')
+        fallbackBuffer = lines.pop()
+        for (const line of lines) {
+          if (!line.trim()) continue
+          let message
+          try {
+            message = JSON.parse(line)
+          } catch {
+            continue
+          }
+          if (message.id !== undefined && fallbackPending.has(message.id)) {
+            fallbackPending.get(message.id)(message)
+            fallbackPending.delete(message.id)
+          }
+        }
+      })
+      let fallbackId = 0
+      const ask = (method, params) => new Promise((settle) => {
+        fallbackId += 1
+        fallbackPending.set(fallbackId, settle)
+        fallbackChild.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: fallbackId, method, params })}\n`)
+      })
+      try {
+        await new Promise((settle) => setTimeout(settle, 1500))
+        const handshake = await ask('initialize', { protocolVersion: 1, clientCapabilities: {} })
+        const opened = handshake?.result === undefined
+          ? undefined
+          : await ask('session/new', { cwd: process.cwd(), mcpServers: [] })
+        const presetOption = (opened?.result?.configOptions ?? []).find((option) => option.id === 'agent_preset')
+        const offered = (presetOption?.options ?? []).map((option) => String(option.value))
+        check('an unknown configured preset still opens a session',
+          opened?.result?.sessionId !== undefined,
+          opened?.error === undefined ? '' : JSON.stringify(opened.error).slice(0, 160))
+        check('that session composes under an offered preset instead',
+          offered.includes(String(presetOption?.currentValue)),
+          `current=${JSON.stringify(presetOption?.currentValue)} offered=${offered.join(',')}`)
+        check('the substitution is reported on stderr',
+          fallbackStderr.includes(bogus) && fallbackStderr.includes('composing this session under'),
+          JSON.stringify(fallbackStderr.trim().split('\n')[0] ?? ''))
+      } finally {
+        fallbackChild.kill()
+      }
+    }
+
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
   } finally {
     child.kill()
