@@ -69,7 +69,7 @@ main
   - `scripts/api-surface-check.mjs` — extracts harness usage from `lib/`
     (services, service members through local aliases, events, package imports),
     strips comments first, rejects `internal/*`.
-  - `npm run check:surface`; added to the CI **syntax** check only.
+  - `node scripts/api-surface-check.mjs`; added to the CI **syntax** check only.
 
 Already-adapted pieces inherited from the parent branch (still valid, do not
 redo): `agent/assistant-stream` seam with per-step latch, persistence
@@ -193,7 +193,7 @@ Keep that path and its arguments working unchanged.
 
 ## 7. Version and CI changes (land with P2)
 
-- `package.json`: version **0.9.0**; peer ranges → `^0.1.5-rc.1 || ^0.1.6-alpha.1`
+- `package.json`: version **0.9.0**; peer ranges → `^0.1.5-rc.2 || ^0.1.6-alpha.1`
   (keep whatever the pinned CLI declares); keep the CLI devDependency at
   `0.1.5-rc.2`.
 - `scripts/compat-check.mjs`: drop the `legacy` (0.1.0-rc.6) and `projection`
@@ -234,9 +234,9 @@ Keep that path and its arguments working unchanged.
 
 | Phase | Commands | Expected |
 | --- | --- | --- |
-| P0 (done) | `npm run check:surface` | 30 violations listed (worklist) |
+| P0 (done) | `node scripts/api-surface-check.mjs` | 30 violations listed (worklist) |
 | P1 | launcher tests described in §4 | `DSH_HOME` never rewritten; mismatch warning on stderr |
-| P2 | `npm run check:surface` | `PUBLIC SURFACE OK` |
+| P2 | `node scripts/api-surface-check.mjs` | `PUBLIC SURFACE OK` |
 | P2 | `node scripts/compat-check.mjs` | 2/2 generations link clean |
 | P2 | keyless smoke + fallback test + resume test on 0.1.5-rc.2 | ALL PASSED (`frames=…`, reply exactly once) |
 | P2 | `node scripts/acp-mcp-test.mjs` on 0.1.5-rc.2 | ALL PASSED |
@@ -294,13 +294,13 @@ points:
 
 | Check | Result |
 | --- | --- |
-| `npm run check:surface` | `PUBLIC SURFACE OK (floor dsh 0.1.5-rc.2; 14 services, 5 events)` |
+| `node scripts/api-surface-check.mjs` | `PUBLIC SURFACE OK (floor dsh 0.1.5-rc.2; 14 services, 5 events)` |
 | `node scripts/compat-check.mjs` | `COMPAT CHECK PASSED (2 generations link clean)` |
 | keyless smoke / mcp / fallback / resume on 0.1.5-rc.2 | ALL PASSED; fallback `frames=18`, reply exactly once |
 | P2.1 `optionOf` ≡ `presets[name]` | live: `availableModes` and the `permission_preset` options are identical option-for-option (3 presets, labels = table keys); now a permanent smoke assertion |
 | P2.2 `permission.set()` writes both knobs | live: `session/set_mode danger-full-access` logged `permission/preset` + `sandbox/mode` + `approval/policy`; the preset survives `session/load` in a new process (now asserted in the resume test) |
 | P2.3 `session/delete` gone | `sessionCapabilities` = `{list, additionalDirectories, close}`; `session/list` output unchanged (asserted) |
-| P1 launcher | `npm run test:launcher` — 21 checks: home never rewritten, missing profile → 127, drift warning stderr-only, three boot-failure translations |
+| P1 launcher | `node scripts/acp-launcher-test.mjs` — 21 checks: home never rewritten, missing profile → 127, drift warning stderr-only, three boot-failure translations |
 | P3 doctor | healthy scratch profile → `READY`; profile with an injected unresolvable bundle → `LAYER mount-time`, `SUBJECT broken-third-party (dsh-definitely-not-installed)`, exit 1 |
 | P4 docs | compat matrix replaced by the single-line statement + a breaking-changes table |
 
@@ -415,7 +415,7 @@ launcher; the published 0.7.0 tarball fetched with `npm pack`):
 | Scenario | Observed | Now mitigated by |
 | --- | --- | --- |
 | **CLI upgraded, bridge left at 0.7.0** | `initialize` OK, then **every `session/new` fails**: `Internal error` → `agent-presets: preset "standard" failed to mount: … tool-subagent: modelSelectionSettings requires … in the Host scope`. 0.7.0 also has **no `agent/assistant-stream`** (0 hits) and no `assistant/message` fallback, and only `persistence.load` (no `open()` handle) — so streaming, replies and the archive would break even if sessions opened | doctor now performs a real `session/new` (the old check stopped at the handshake and would have said READY); `classify` gained a host-scope branch that names the missing service and tells you to move bridge and CLI together. Nothing can warn *before* the fact, because that bridge is already installed |
-| **Bridge upgraded, CLI left behind** (0.1.1-rc.2) | profile dies while loading: `failed to import loader entry subagent-model-selection-settings (…): Package subpath './model-selection-settings' is not defined by "exports"` — names an internal row, not "your dsh is too old" | launcher warns on stderr **before** the boot (`below the range this bridge supports: ^0.1.5-rc.1 || ^0.1.6-alpha.1`); doctor prints `RESULT FAIL — CLI too old` and never boots. Both driven by the new `scripts/lib/dsh-version.mjs` |
+| **Bridge upgraded, CLI left behind** (0.1.1-rc.2) | profile dies while loading: `failed to import loader entry subagent-model-selection-settings (…): Package subpath './model-selection-settings' is not defined by "exports"` — names an internal row, not "your dsh is too old" | launcher warns on stderr **before** the boot (`below the range this bridge supports: ^0.1.5-rc.2 || ^0.1.6-alpha.1`); doctor prints `RESULT FAIL — CLI too old` and never boots. Both driven by the new `scripts/lib/dsh-version.mjs` |
 | **Both together, profile seeded per the old README** (`subagent-model-selection-settings` in the user layer) | boot aborts: `TypeError: duplicate loader entry id: subagent-model-selection-settings` | launcher pre-warns (anchored on the real row line, so a comment does not false-positive); doctor classifies the duplicate and prints the fix; `init-acp-home.sh` retires the row (backup, comments kept, `[]` restored) |
 | **Both together, profile booted from a checkout / `DSH_PATH`** | the old launcher had moved the profile to `~/.dsh-acp`; the new one resolves `~/.dsh`, so it exits 127 (`profile not found`) | the missing-profile branch now detects `~/.dsh-acp/profiles/<name>` and prints the exact `DSH_HOME=<home>` fix |
 | **Both together, stock npm install** | works; verified doctor READY, `session/new` OK, 481 archived sessions listed through the 0.1.5 handle API | — |
@@ -477,7 +477,7 @@ ranges that are neither enforced nor reliable — the pattern P2 deliberately de
 | --- | --- | --- |
 | declared-surface-only, machine-enforced | `api-surface-check.mjs` + `public-surface.json`, blocking CI | **stronger than upstream requires** |
 | peer ranges mirroring the CLI's ranges; devDeps pinned in the same range | `package.json`, 14 peers | matches the upstream invariant |
-| one release per API line, no cross-generation tolerance | 0.9.x ↔ `^0.1.5-rc.1 \|\| ^0.1.6-alpha.1`; 0.7.x was the probing generation | matches upstream's lockstep discipline |
+| one release per API line, no cross-generation tolerance | 0.9.x ↔ `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1`; 0.7.x was the probing generation | matches upstream's lockstep discipline |
 | per-line verification | `compat-check.mjs` (link) + CI boot matrix, now **both** lines | matches upstream's Node-version matrix idea |
 | loud, classified failure | launcher translation + `acp-doctor.mjs` (three layers) | **beyond upstream** (no third-party equivalent) |
 | migration tooling | `init-acp-home.sh` retires legacy rows; doctor names duplicates; README checklist | **beyond the community norm** |
