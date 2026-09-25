@@ -2,6 +2,11 @@
 # (block-level streaming, usage/stat telemetry, model & reasoning-effort
 # switching, permission-preset modes) to ACP clients such as the Zed editor.
 #
+# NOTE: this file is the reference standalone composition. The official install
+# (`dsh plugin --profile acp-enhanced add …`, see README.md) builds the profile
+# from the dsh CLI's own `@deepseek-ai/dsh-base` template instead — use that
+# flow unless you are deliberately running a hand-rolled composition.
+#
 # Run with:
 #   dsh --profile acp-enhanced
 # then register it in Zed settings.json under agent_servers (see README.md).
@@ -80,10 +85,13 @@
         approval: never
 
 # ── durability: JSONL session log + checkpointing + derived query index ─────
+# Session logs live under `$DSH_HOME/sessions/<slug>/<id>/session.jsonl.zstd`
+# (the documented layout shared with `dsh web`); DSH_ACP_SESSIONS_ROOT
+# overrides the root when an isolated tree is wanted.
 - id: session-persistence-jsonl
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
-    root: !!js process.env.DSH_ACP_SESSIONS_ROOT ?? './.sessions'
+    root: !!js process.env.DSH_ACP_SESSIONS_ROOT ?? (process.env.DSH_HOME ?? `${process.env.HOME}/.dsh`) + '/sessions'
 
 - id: session-checkpoint-policy
   name: '@deepseek-ai/dsh-session-checkpoint-policy'
@@ -91,13 +99,20 @@
 - id: session-query-sqlite
   name: '@deepseek-ai/dsh-session-query-sqlite'
   config:
-    path: !!js process.env.DSH_ACP_SESSIONS_ROOT ?? './.sessions'
+    path: !!js process.env.DSH_ACP_SESSIONS_ROOT ?? (process.env.DSH_HOME ?? `${process.env.HOME}/.dsh`) + '/sessions'
     openAt: startup
 
 - id: session-projection
   name: '@deepseek-ai/dsh-session-projection'
 
 # ── telemetry & compaction ──────────────────────────────────────────────────
+# NOTE: `compaction-basic`, `tool-fs` and `tool-todo` below are the host-layer
+# rows the bridge's own bundle patch (cordis.patch.yml) disables once the
+# package is installed as a bundle — model-facing rows move INTO the
+# agent-presets roster (standard/ptc/minimal/cordis) and a `minimal` session
+# must not leak host-layer tools. They stay here so this standalone
+# composition works BEFORE the patch applies (plain loader row); expect them
+# to read `disabled: true` in `dsh --dump-config` after the bundle install.
 - id: token-meter
   name: '@deepseek-ai/dsh-token-meter'
 
