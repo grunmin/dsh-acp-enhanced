@@ -570,4 +570,5 @@ patch 会自动装配（package.json `dsh.bundle.patch`）——**不要**把它
 的用户层 `cordis.patch.yml`，否则 loader 在启动时因重复 entry id 拒绝装配。**升级**
 一个已有自定义用户层 patch 的 profile 时，用户层只保留你自己的定制行（例如
 acp-enhanced 行的 `includeAllProviders: true`，同时 restate provider/model/preset——
-patch 条目是整体替换、不做合并）。升级前创建的会话恢复时会落到名册默认预设上。
+patch 条目是整体替换、不做合并）。会话恢复时用日志里记的 preset（最后一条 `agent-preset/selected`，
+否则取创建时的 header）；只有日志里什么都没记的会话才落到名册默认预设上。

@@ -659,5 +659,6 @@ user-layer `cordis.patch.yml`, or the loader rejects the duplicate entry ids at 
 When **upgrading** a profile that already carries a customized user-layer patch, keep
 only your custom row configs there (e.g. `includeAllProviders: true` on the
 acp-enhanced row, restating provider/model/preset since patch entries replace whole
-rows, they do not merge). A session created before the upgrade resumes under the
-roster's default preset.
+rows, they do not merge). A session resumes under the preset its own log records
+(the last `agent-preset/selected` event, else the creation header); only a log that
+recorded none falls back to the roster's default.
