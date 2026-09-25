@@ -466,6 +466,34 @@ because a preset is data the loader mounts:
   stderr — and fails to *resume* a session that already ran it, since composing a different
   tool set onto an existing transcript is exactly what the blank-only rule forbids.
 
+#### What 0.1.7 changes about a large session store
+
+Reading a stored session log got much more expensive on 0.1.7 (~217ms per log against
+~9ms on 0.1.5), and `session/list` needs one title per stored session. Before this fix the
+list asked for a `stat()` **and** a full decode per session, so a store of a few hundred
+sessions made the call take ~60 seconds — past the client's 30-second wire timeout, which
+left the session sidebar empty. It was invisible to a scratch profile: a fresh home has too
+few sessions to notice.
+
+The list now takes the size and revision of every session from a single store pass and
+decodes only as many logs as a short budget allows, **most recently updated session first**
+(that is the order the sidebar shows). Whatever the budget does not reach keeps resolving in
+the background and arrives as `session_info_update`, and titles are cached by revision, so a
+re-list is a map lookup. Measured on a real 302-session store: 60s → 2.7s per call, with the
+rest of the titles arriving as they resolve. `DSH_ACP_LIST_BUDGET_MS` tunes the budget
+(default 2500).
+
+#### Upgrading to 0.1.7
+
+Two things outside this package to check, both silent when wrong:
+
+- **`dsh-free-search`** must be **≥ 0.4.39**. Earlier releases import `SettingsProvider`,
+  which 0.1.7's `dsh-settings` replaced with `SettingsForms`; the entry fails to import, the
+  loader continues, and `web_search` is simply gone. `scripts/acp-doctor.mjs` now reports a
+  degraded boot (`RESULT DEGRADED` with the entry names, exit 1) instead of `RESULT READY`.
+- **user-authored presets** in `$DSH_HOME/.agent-presets/` are no longer discovered — see
+  [Your own presets](#your-own-presets) above.
+
 ### Upgrading from a published ≤ 0.7.0
 
 The published `latest` is **0.7.0**, from the pre-0.1.3 API line, so the bridge and the CLI
@@ -593,6 +621,7 @@ the ACP wire), so the agent log already carries the layer and the fix.
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
 | `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
 | A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> loader entries never activated` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
+| Session sidebar empty / slow to fill, bridge ≤ 0.9.1 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge — it now answers in seconds and streams the remaining titles as `session_info_update` |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
 | Need detailed diagnostics | — | `ACP_DEBUG=1` (stderr lifecycle trace) and `ACP_LOG=/tmp/acp.jsonl` (per-event JSONL with timings) |
 
@@ -610,6 +639,7 @@ node scripts/acp-smoke-keyless.mjs    # keyless boot smoke (CI)
 node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
+node scripts/stored-titles-test.mjs   # session/list title reader: bounded reads, no per-session stat(), revision-keyed cache (no network)
 node scripts/replay-order-test.mjs     # replay/fallback chunk order: reasoning precedes its reply (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once

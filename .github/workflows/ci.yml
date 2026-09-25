@@ -38,7 +38,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/stored-titles.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/stored-titles-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
       - name: Launcher contract (no implicit home switch)
@@ -51,6 +51,10 @@ jobs:
           node scripts/session-facts-test.mjs
           node scripts/context-window-test.mjs
           node scripts/tool-result-test.mjs
+          # The regression guard for the stored-session list stall: it counts
+          # persistence calls, which a scratch-home smoke test cannot (a fresh
+          # store is too small to expose an unbounded read).
+          node scripts/stored-titles-test.mjs
       - name: Package integrity (entry points, shipped references, modes)
         run: node scripts/pack-check.mjs
       - name: Cross-generation link check (README's promised guard)

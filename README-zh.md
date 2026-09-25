@@ -401,6 +401,29 @@ loader 要挂载的数据：
   但**恢复**一个跑过它的会话仍会失败——把另一套工具面接到已有转录上，正是「仅空会话可切换」
   这条规则要防的事。
 
+#### 0.1.7 对「会话库很大」意味着什么
+
+0.1.7 上读一个已存会话日志的代价高得多（约 217ms/个，0.1.5 约 9ms），而 `session/list` 需要
+给每个已存会话一个标题。修复前，这个调用会对每个会话同时做 `stat()` **和**一次完整解码，
+于是几百个会话的库会让该调用耗时约 **60 秒**——超过客户端 30 秒的线路超时，侧边栏会话列表
+因此空白。临时 profile 看不到这个问题：全新的 home 会话太少。
+
+现在列表只从**一次**存储遍历里取每个会话的体积与 revision，并且只解码「短预算」内放行的
+那些日志，**按最近活动优先**（也就是侧边栏展示的顺序）。预算没覆盖到的部分会继续在后台解析，
+以 `session_info_update` 逐条送达；标题按 revision 缓存，因此再次列取就是一次 map 查找。在真实
+的 302 会话库上实测：每次调用 **60s → 2.7s**，其余标题随后陆续到达。可用
+`DSH_ACP_LIST_BUDGET_MS` 调整预算（默认 2500）。
+
+#### 升级到 0.1.7 前要检查的两件事
+
+两者出错时都是静默的：
+
+- **`dsh-free-search` 必须 ≥ 0.4.39**。更早的版本 import `SettingsProvider`，而 0.1.7 的
+  `dsh-settings` 把它换成了 `SettingsForms`；该条目 import 失败、loader 继续跑，`web_search`
+  就这么消失了。`scripts/acp-doctor.mjs` 现在会把这种启动报告成降级（`RESULT DEGRADED` 并列出
+  条目名、退出码 1），而不是 `RESULT READY`。
+- **`$DSH_HOME/.agent-presets/` 里的自建 preset 不再被发现**——见上文「自建 preset」。
+
 ### 从已发布的 ≤ 0.7.0 升级
 
 npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥和 CLI **必须一起动**——只升一半，
@@ -515,6 +538,7 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
 | 升级 dsh 后报 `Unknown agent preset: <id>` | `ls $DSH_HOME/.agent-presets` 与 profile 的 `cordis.patch.yml` | 该 preset 已不在名册里——0.1.7 起不再扫描 `$DSH_HOME/.agent-presets`。把它改成一条 `@deepseek-ai/dsh-agent-preset` 声明行（见「自建 preset」）；0.9.1 下*空*会话会先用名册默认值打开（stderr 有说明），但恢复已跑过它的线程在补上行之前仍然失败 |
 | profile 以前有的能力静默消失（例如 `web_search`） | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> loader entries never activated` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。给这条 dsh 线升级该 bundle——`dsh-free-search` 在 0.1.7 上需要 ≥ 0.4.39，因为 0.4.24 import 的 `SettingsProvider` 已被 `dsh-settings` 删除——或直接移除它 |
+| 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.1 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对会话库很大意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥即可——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
 | 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
@@ -532,6 +556,7 @@ node scripts/acp-smoke-keyless.mjs    # keyless 冒烟（CI 用）
 node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
+node scripts/stored-titles-test.mjs   # session/list 标题读取器：读取量受预算约束、不做 per-session stat()、按 revision 缓存（无网络）
 node scripts/replay-order-test.mjs    # 重放/回退的分块顺序：思考块先于它产出的回复（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
