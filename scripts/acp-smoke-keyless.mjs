@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import readline from 'node:readline'
 import { dshHome } from './lib/dsh-home.mjs'
 
@@ -76,6 +77,25 @@ function probeResolution(specifier) {
     from(pathToFileURL(path.join(repo, 'package.json')).href, 'from repo checkout'),
     from(import.meta.url, 'from this script (repo node_modules)'),
   ].join('\n  ')
+}
+
+/**
+ * The paths that decide whether the booting CLI can load a shipped row.
+ *
+ * `globalPaths` is Node's own global search list (`node_modules` beside the
+ * running binary and prefix); on an `npm install -g` CI runner that is where
+ * `@deepseek-ai/dsh` and its transitive closure live. Listing existence rather
+ * than resolving isolates "the package is not in that closure" from "the
+ * closure is somewhere else", which is the last open question.
+ */
+function sandboxLocalPaths() {
+  const nodeDir = path.dirname(process.execPath)
+  const candidates = [
+    path.join(nodeDir, '..', 'lib', 'node_modules', '@deepseek-ai', 'dsh-sandbox-local'),
+    path.join(nodeDir, '..', 'lib', 'node_modules', '@deepseek-ai', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-sandbox-local'),
+    path.join(repo, 'node_modules', '@deepseek-ai', 'dsh-sandbox-local'),
+  ]
+  return candidates.map((target) => `${target}: ${existsSync(target) ? 'PRESENT' : 'missing'}`)
 }
 
 // Create the profile from this checkout (link: keeps it free of npm state).
@@ -162,6 +182,11 @@ async function main() {
     console.log(`diag: DSH_PATH = ${process.env.DSH_PATH ?? '(unset)'}`)
     console.log(`diag: @deepseek-ai/dsh-sandbox-local\n  ${probeResolution('@deepseek-ai/dsh-sandbox-local')}`)
     console.log(`diag: @deepseek-ai/dsh-agent\n  ${probeResolution('@deepseek-ai/dsh-agent')}`)
+    // Third round: the first two proved the profile/repo resolution is identical
+    // on the runner and locally, so the CLI's own installation closure — the
+    // only source that can satisfy that row — is what differs. Name it.
+    console.log(`diag: process.execPath = ${process.execPath}`)
+    console.log(`diag: sandbox-local candidates\n  ${sandboxLocalPaths().join('\n  ')}`)
     const init = await rpc('initialize', { protocolVersion: 1, clientCapabilities: {} })
     check('initialize succeeds', init.agentInfo?.name === 'deepseek-harness-acp-enhanced')
     check('agent version present', typeof init.agentInfo?.version === 'string')
