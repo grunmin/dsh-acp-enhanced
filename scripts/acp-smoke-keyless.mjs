@@ -30,22 +30,52 @@ function check(label, ok, detail = '') {
   if (!ok) failed += 1
 }
 
+/**
+ * Off-wire text the dsh process wrote to **stdout**. The ACP channel is
+ * JSON-RPC on stdout, so anything that is not a JSON line is harness output
+ * (loader warnings, "failed to import" diagnostics) that the reader below
+ * would otherwise discard. Kept and echoed when a check fails: dsh's own
+ * boot errors say "see the error(s) logged above" without ever printing them,
+ * which is why a failing leg needs these lines to be diagnosable.
+ */
+const harnessOutput = []
+function noteHarnessLine(line) {
+  harnessOutput.push(line)
+  if (harnessOutput.length > 200) harnessOutput.shift()
+}
+
+function dumpDiagnostics(reason) {
+  console.error(`\n===== dsh harness output (${reason}) =====`)
+  console.error(harnessOutput.length === 0
+    ? '(nothing was written to stdout outside the JSON-RPC channel)'
+    : harnessOutput.join('\n'))
+  console.error('===== end dsh harness output =====\n')
+}
+
 // Create the profile from this checkout (link: keeps it free of npm state).
 const setup = spawnSync('dsh', ['plugin', '--profile', profile, 'add', `link:${repo}`], {
   stdio: ['ignore', 'pipe', 'pipe'],
 })
+// The build's own output is the first place an unresolvable plugin shows up;
+// print it unconditionally so a CI failure carries it (a green run stays quiet
+// about the happy path only because there is nothing to print).
+if (setup.stdout?.length) process.stdout.write(`[profile add stdout]\n${String(setup.stdout)}`)
+if (setup.stderr?.length) process.stderr.write(`[profile add stderr]\n${String(setup.stderr)}`)
 if (setup.status !== 0) {
   console.error(String(setup.stderr))
   console.error('FAIL  could not create profile via dsh plugin add')
   process.exit(1)
 }
-const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'inherit'] })
+const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'pipe'] })
+child.stderr.on('data', (chunk) => process.stderr.write(`[agent stderr] ${chunk}`))
 const pending = new Map()
 const notifications = []
 /** Wire arrival order: responses vs notifications, for ordering assertions. */
 const orderMarks = []
 let lastMethod = ''
 let seq = 0
+let childExited = null
+child.on('exit', (code, signal) => { childExited = { code, signal } })
 
 readline.createInterface({ input: child.stdout }).on('line', (line) => {
   if (!line.trim()) return
@@ -53,6 +83,9 @@ readline.createInterface({ input: child.stdout }).on('line', (line) => {
   try {
     msg = JSON.parse(line)
   } catch {
+    // Not JSON-RPC → harness output, not a protocol violation. Keep it for the
+    // failure dump instead of dropping it on the floor.
+    noteHarnessLine(line)
     return
   }
   if (msg.id !== undefined) {
@@ -346,7 +379,17 @@ async function main() {
       }
     }
 
+    if (failed > 0 || childExited !== null) {
+      if (childExited !== null) {
+        console.error(`note: the dsh process exited early (code=${childExited.code} signal=${childExited.signal})`)
+      }
+      dumpDiagnostics(`${failed} failed check(s); child=${JSON.stringify(childExited)}`)
+    }
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
+  } catch (error) {
+    dumpDiagnostics(`threw: ${error?.message ?? error}; child=${JSON.stringify(childExited)}`)
+    console.error(String(error?.stack ?? error))
+    process.exit(1)
   } finally {
     child.kill()
     spawnSync('rm', ['-rf', path.join(dshHome(), 'profiles', profile)])
