@@ -25,8 +25,8 @@ over the ACP wire.
   ring's denominator is the routed model's declared `contextWindow`, folded from the session
   log so a resumed thread keeps it (the harness logs `request/context` once and does not
   re-emit it for an unchanged route). dsh's own `dsh-compaction-basic` row auto-compacts at
-  ~80% of that window and is mounted by the `standard`/`standard-flash` presets; `/compact`
-  forces it manually. A route whose adapter declares no `contextWindow` has no denominator,
+  ~80% of that window and is mounted by the `standard`/`ptc`/`cordis` presets (never
+  `minimal`); `/compact` forces it manually. A route whose adapter declares no `contextWindow` has no denominator,
   so the ring reports `used === size`.
 - **Image support (multimodal)**: when the dsh composition mounts an attachment store
   (`dsh-attachment-local`, mounted by default in `dsh-base`), `promptCapabilities.image`
@@ -46,7 +46,7 @@ over the ACP wire.
 - **Approval**: native allow-once / reject-once prompts per tool call
 - **Agent presets**: per-session model-facing composition (tools + prompt sections)
   from the dsh agent-preset roster. `standard` is the full coding agent (default),
-  `minimal` (极简模式) is a bare shell + files editor with **no** subagent/web/todo/plan
+  `minimal` (极简模式) is a bare persistent shell with **no** subagent/web/todo/plan
   tools — nothing from the host layer leaks into a minimal agent; `ptc` and `cordis`
   ship alongside. Your own presets are declared in the profile (see
   [Your own presets](#your-own-presets)) — dsh 0.1.7 no longer discovers
@@ -456,8 +456,9 @@ because a preset is data the loader mounts:
 
 - **restate the whole composition.** A preset row carries the complete `config.plugins`
   list — there is no "patch a child of an existing preset" — so a fork of `standard` has
-  to be re-baselined onto the new line's row set (0.1.7 renamed `workflow-worker-thread`
-  to `workflow-ptc`). Prefer the host plane when your only difference is configuration
+  to be re-baselined onto the new line's row set (0.1.6 replaced `workflow-worker-thread`
+  with the `workflow-ptc` runtime). Prefer the host plane when your only difference is
+  configuration
   (model routes, approval, sandbox): fork a preset only for a different **tool set**.
 - **set the default where the line reads it.** `agent-preset-registry.config.default` on
   0.1.7, `agent-presets.config.default` on ≤ 0.1.6 (or the Settings surface, which writes
@@ -519,8 +520,9 @@ Checklist:
    user layer? Delete the row: the bridge's patch ships it now, and a duplicate id aborts the
    boot. `scripts/init-acp-home.sh` retires it for you. The launcher warns, and the doctor
    names the id.
-5. Check that any third-party bundle in the profile supports 0.1.5 (`dsh-free-search` ≥ 0.4.24
-   is verified) — the profile is one failure domain.
+5. Check that any third-party bundle in the profile supports the line you are moving to
+   (`dsh-free-search` ≥ 0.4.24 is verified for 0.1.5; on 0.1.7 it needs ≥ 0.4.39 — see
+   [Upgrading to 0.1.7](#upgrading-to-017)) — the profile is one failure domain.
 6. Restart Zed (or open a fresh agent thread); `node <pkg>/scripts/acp-doctor.mjs` verifies the
    whole path first, including opening a thread.
 
@@ -621,7 +623,7 @@ the ACP wire), so the agent log already carries the layer and the fix.
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
 | `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
 | A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> loader entries never activated` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
-| Session sidebar empty / slow to fill, bridge ≤ 0.9.1 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge — it now answers in seconds and streams the remaining titles as `session_info_update` |
+| Session sidebar empty / slow to fill, bridge ≤ 0.9.0 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge to ≥ 0.9.1 — it answers in seconds and streams the remaining titles as `session_info_update` |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
 | Need detailed diagnostics | — | `ACP_DEBUG=1` (stderr lifecycle trace) and `ACP_LOG=/tmp/acp.jsonl` (per-event JSONL with timings) |
 
@@ -640,6 +642,9 @@ node scripts/acp-resume-test.mjs      # session resume test
 node scripts/codec-image-test.mjs     # image-codec unit tests (no network, fake store)
 node scripts/terminal-codec-test.mjs   # terminal-card codec unit tests (no network)
 node scripts/stored-titles-test.mjs   # session/list title reader: bounded reads, no per-session stat(), revision-keyed cache (no network)
+node scripts/session-facts-test.mjs   # session-log folds: runningPreset/isBlank, live and stored share one contract (no network)
+node scripts/context-window-test.mjs  # request/context fold: the resumed ring keeps its denominator (no network)
+node scripts/tool-result-test.mjs     # tool/result id + body extraction across the supported dsh shapes (no network)
 node scripts/replay-order-test.mjs     # replay/fallback chunk order: reasoning precedes its reply (no network)
 node scripts/acp-image-e2e.mjs        # image capability e2e (vision-model leg needs an API key)
 node scripts/acp-message-fallback-test.mjs  # live seam + assistant/message fallback: a seam fired and the reply arrived exactly once
@@ -648,9 +653,10 @@ node scripts/acp-doctor.mjs            # boot the profile once and name the fail
 scripts/init-acp-home.sh              # optional: bootstrap an *isolated* home (the launcher never switches to it by itself)
 ```
 
-DevDependency pins for the harness packages use the same ranges the pinned
-`@deepseek-ai/dsh` CLI declares (e.g. `^0.1.7-alpha.1`), so the repo's tree and a fresh
-CLI install resolve one coherent family — exact patch pins here mixed with the CLI's
+DevDependency pins for the harness packages use the line's prerelease range (currently
+`^0.1.7-alpha.1`, which resolves to the exact closure the pinned `@deepseek-ai/dsh` CLI
+itself declares), so the repo's tree and a fresh CLI install resolve one coherent family —
+exact patch pins here mixed with the CLI's
 range-resolved closure produce a split closure (two versions of one name) that breaks
 profile boots with export-not-found errors. After changing those pins, regenerate the
 whole lockfile (`rm -rf node_modules pnpm-lock.yaml && pnpm install`): an incremental

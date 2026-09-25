@@ -21,8 +21,8 @@ ACP 线上。
   轮次计数（`usage_update._meta` 携带全量明细）。环的分母是被路由模型声明的
   `contextWindow`，从会话日志折叠而来，因此恢复（resume）的线程也能保留——harness 只在
   路由变化时记录一次 `request/context`，路由不变不会重新发出。dsh 自带的
-  `dsh-compaction-basic` 行会在该窗口约 80% 时自动压缩，`standard` / `standard-flash`
-  预设默认挂载；`/compact` 可手动触发。适配器未声明 `contextWindow` 的路由没有分母，
+  `dsh-compaction-basic` 行会在该窗口约 80% 时自动压缩，`standard` / `ptc` / `cordis`
+  预设默认挂载（`minimal` 不挂）；`/compact` 可手动触发。适配器未声明 `contextWindow` 的路由没有分母，
   此时环报告 `used === size`。
 - **图片支持（多模态）**：当 dsh 组合挂载了附件存储（`dsh-base` 默认装配
   `dsh-attachment-local`）时，会声明 `promptCapabilities.image` 并把粘贴/
@@ -40,8 +40,8 @@ ACP 线上。
 - **权限预设**：read-only / workspace-write / full-access 三种会话模式
 - **审批**：工具调用弹出原生 allow-once / reject-once 审批
 - **Agent 预设**：每个会话的模型侧组合（工具 + 提示词段）来自 dsh agent-preset
-  名册。`standard` 为完整编码 agent（默认），`minimal`（极简模式）只有裸 shell +
-  文件编辑器，**不含** subagent/web/todo/plan 等工具——极简 agent 不会泄漏任何
+  名册。`standard` 为完整编码 agent（默认），`minimal`（极简模式）只有裸 shell
+  （持久终端），**不含** subagent/web/todo/plan 等工具——极简 agent 不会泄漏任何
   host 层工具；`ptc` 与 `cordis` 随 dsh CLI 附带。**自建预设写在 profile 里**
   （见「自建 preset」）——dsh 0.1.7 起不再扫描 `~/.dsh/.agent-presets`。
   通过 `agent_preset` 配置项、`/preset` 命令或
@@ -392,8 +392,8 @@ standard/ptc/minimal/cordis 组合打进去、并作为只读 `system` root 前�
 loader 要挂载的数据：
 
 - **整装重述。** preset 行携带完整的 `config.plugins` 列表——不存在「只 patch 已有 preset
-  的某个子行」——所以 fork `standard` 必须按新代的行集重新 baseline（0.1.7 把
-  `workflow-worker-thread` 换成了 `workflow-ptc`）。差异只在配置（模型路由、审批、沙箱）时
+  的某个子行」——所以 fork `standard` 必须按新代的行集重新 baseline（0.1.6 把
+  `workflow-worker-thread` 换成了 `workflow-ptc` 运行时）。差异只在配置（模型路由、审批、沙箱）时
   优先放在宿主面：只有**工具集**不同才值得 fork。
 - **默认值写在当代读它的地方。** 0.1.7 上是 `agent-preset-registry.config.default`，
   ≤ 0.1.6 上是 `agent-presets.config.default`（或 Settings 里的 `selectedDefault`）。
@@ -446,7 +446,8 @@ npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥�
 4. 以前照旧 README 在 profile 用户层里塞过 `subagent-model-selection-settings`？把它删掉：现在由桥的
    patch 提供该行，重复 id 会让启动中止。`scripts/init-acp-home.sh` 会自动清理；启动器会告警，doctor
    会点名该 id。
-5. 确认 profile 里的第三方 bundle 支持 0.1.5（`dsh-free-search` ≥ 0.4.24 已验证）——profile 是单一故障域。
+5. 确认 profile 里的第三方 bundle 支持你要升到的那条线（`dsh-free-search` 在 0.1.5 上 ≥ 0.4.24
+   已验证；在 0.1.7 上需要 ≥ 0.4.39，见「升级到 0.1.7 前要检查的两件事」）——profile 是单一故障域。
 6. 重启 Zed（或新开一个 agent 线程）；先用 `node <pkg>/scripts/acp-doctor.mjs` 验证整条链路（它现在连
    开线程都会实测）。
 
@@ -538,7 +539,7 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
 | 升级 dsh 后报 `Unknown agent preset: <id>` | `ls $DSH_HOME/.agent-presets` 与 profile 的 `cordis.patch.yml` | 该 preset 已不在名册里——0.1.7 起不再扫描 `$DSH_HOME/.agent-presets`。把它改成一条 `@deepseek-ai/dsh-agent-preset` 声明行（见「自建 preset」）；0.9.1 下*空*会话会先用名册默认值打开（stderr 有说明），但恢复已跑过它的线程在补上行之前仍然失败 |
 | profile 以前有的能力静默消失（例如 `web_search`） | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> loader entries never activated` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。给这条 dsh 线升级该 bundle——`dsh-free-search` 在 0.1.7 上需要 ≥ 0.4.39，因为 0.4.24 import 的 `SettingsProvider` 已被 `dsh-settings` 删除——或直接移除它 |
-| 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.1 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对会话库很大意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥即可——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
+| 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.0 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对『会话库很大』意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥到 ≥ 0.9.1——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
 | 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
@@ -557,6 +558,9 @@ node scripts/acp-resume-test.mjs      # 会话恢复测试
 node scripts/codec-image-test.mjs     # 图片编解码单元测试（无网络，假 store）
 node scripts/terminal-codec-test.mjs  # 终端卡片编解码单元测试（无网络）
 node scripts/stored-titles-test.mjs   # session/list 标题读取器：读取量受预算约束、不做 per-session stat()、按 revision 缓存（无网络）
+node scripts/session-facts-test.mjs   # 会话日志折叠：runningPreset/isBlank，live 与 stored 共享同一契约（无网络）
+node scripts/context-window-test.mjs  # request/context 折叠：恢复后的环保留分母（无网络）
+node scripts/tool-result-test.mjs     # tool/result 的 id 与正文提取，覆盖各支持代的形状（无网络）
 node scripts/replay-order-test.mjs    # 重放/回退的分块顺序：思考块先于它产出的回复（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
@@ -565,8 +569,9 @@ node scripts/acp-doctor.mjs           # 真实启动一次 profile，指出失�
 scripts/init-acp-home.sh              # 可选：引导**独立** home（启动器不会自行切过去）
 ```
 
-harness 包的 devDependency 与锁定的 `@deepseek-ai/dsh` CLI 声明相同的 range（如
-`^0.1.7-alpha.1`），让仓库依赖树与全新 CLI 安装解析出同一个连贯家族——在此用精确 patch
+harness 包的 devDependency 用该线的 prerelease range（当前 `^0.1.7-alpha.1`，会解析到
+锁定的 `@deepseek-ai/dsh` CLI 自己声明的精确闭包），让仓库依赖树与全新 CLI 安装解析出
+同一个连贯家族——在此用精确 patch
 锁定、与 CLI 的 range 闭包混存会得到分裂闭包（同名包两个版本），profile 启动时报
 export-not-found。改这些锁定后务必整体重建 lockfile（`rm -rf node_modules pnpm-lock.yaml
 && pnpm install`）：原地增量安装既会留下污染 profile heal 的残留 store 条目，还会保留
