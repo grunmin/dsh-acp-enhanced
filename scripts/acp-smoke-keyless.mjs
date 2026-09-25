@@ -10,7 +10,7 @@
  * self-contained.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
 import { dshHome } from './lib/dsh-home.mjs'
@@ -50,6 +50,32 @@ function dumpDiagnostics(reason) {
     ? '(nothing was written to stdout outside the JSON-RPC channel)'
     : harnessOutput.join('\n'))
   console.error('===== end dsh harness output =====\n')
+}
+
+/**
+ * Where the booting profile expects its plugin specifiers to resolve.
+ *
+ * On the 0.1.5-rc.2 CI leg the boot dies with "plugin(s) failed to load:
+ * @deepseek-ai/dsh-sandbox-local" while the same dsh version boots this exact
+ * checkout locally. Nothing in the failure names the path it tried, and dsh's
+ * own diagnostics are never printed, so the runner is asked directly: does the
+ * specifier resolve from the profile, from the repo checkout the profile links,
+ * and from the CLI installation that is booting?
+ */
+function probeResolution(specifier) {
+  const from = (href, label) => {
+    try {
+      return `${label}: ${import.meta.resolve(specifier, href)}`
+    } catch (error) {
+      return `${label}: UNRESOLVED (${error?.code ?? error?.message ?? error})`
+    }
+  }
+  const profilePkg = path.join(dshHome(), 'profiles', profile, 'package.json')
+  return [
+    from(pathToFileURL(profilePkg).href, 'from profile'),
+    from(pathToFileURL(path.join(repo, 'package.json')).href, 'from repo checkout'),
+    from(import.meta.url, 'from this script (repo node_modules)'),
+  ].join('\n  ')
 }
 
 // Create the profile from this checkout (link: keeps it free of npm state).
@@ -131,6 +157,11 @@ function rpc(method, params, timeoutMs = 30000) {
 
 async function main() {
   try {
+    // Asked before the handshake: on a leg that dies during profile boot this
+    // is the only output that names the resolution the loader was working with.
+    console.log(`diag: DSH_PATH = ${process.env.DSH_PATH ?? '(unset)'}`)
+    console.log(`diag: @deepseek-ai/dsh-sandbox-local\n  ${probeResolution('@deepseek-ai/dsh-sandbox-local')}`)
+    console.log(`diag: @deepseek-ai/dsh-agent\n  ${probeResolution('@deepseek-ai/dsh-agent')}`)
     const init = await rpc('initialize', { protocolVersion: 1, clientCapabilities: {} })
     check('initialize succeeds', init.agentInfo?.name === 'deepseek-harness-acp-enhanced')
     check('agent version present', typeof init.agentInfo?.version === 'string')
