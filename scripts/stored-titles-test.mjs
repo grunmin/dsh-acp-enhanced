@@ -10,11 +10,13 @@
  * implementation finishes in milliseconds.
  *
  * The reader is dependency-injected for exactly that reason: the fake below
- * counts every load and its `stat()` throws, so "the list path never calls
- * `stat()`" and "the read count is bounded by the budget, not the corpus" are
- * both observable without a harness, a model or a profile.
+ * counts every load and its `stat()` throws, and a source-level check pins
+ * `lib/index.js` itself, so "no `stat()` probe ever returns to the list path"
+ * and "the read count is bounded by the budget, not the corpus" are both
+ * observable without a harness, a model or a profile.
  */
-import { StoredTitleReader, rankTitleCandidates, titleCacheKey, DEFAULT_MAX_BYTES } from '../lib/stored-titles.js'
+import { readFileSync } from 'node:fs'
+import { StoredTitleReader, rankTitleCandidates, titleCacheKey, budgetFrom, DEFAULT_BUDGET_MS, DEFAULT_MAX_BYTES } from '../lib/stored-titles.js'
 
 let failed = 0
 function check(label, ok, detail = '') {
@@ -30,9 +32,10 @@ const snapshots = (n, sizeBytes = 1024) => Array.from({ length: n }, (_, i) => (
 }))
 
 /**
- * A persistence stand-in with the two members the reader is allowed to touch:
- * `list()` (once per request) and a log read. `stat()` throws, so any code path
- * that reaches for it fails the test rather than passing quietly.
+ * A persistence stand-in whose `stat()` throws: the reader only ever receives
+ * `loadTitle`, so any code path — reader or bridge — that reaches for
+ * `stat()` fails the test rather than passing quietly (the bridge surface is
+ * additionally pinned by the source-level check below).
  */
 function fakePersistence({ titles = {}, loadMs = 5 } = {}) {
   const state = { listCalls: 0, statCalls: 0, loads: [], failed: new Set() }
@@ -227,6 +230,29 @@ function makeReader({ titles, loadMs, cacheLimit, onTitle, stopped } = {}) {
     `loads=${fake.state.loads.join(',')}`)
 }
 
+// ── the budget value itself: a typo must not disable the guard ──────────────
+
+{
+  check('an unset budget falls back to the default', budgetFrom(undefined) === DEFAULT_BUDGET_MS)
+  check('a numeric string is taken as-is', budgetFrom('40') === 40)
+  check('zero is a legal budget (defer every title)', budgetFrom('0') === 0)
+  check('a garbage budget falls back instead of NaN-disabling the gate',
+    budgetFrom('abc') === DEFAULT_BUDGET_MS)
+  check('an empty budget falls back instead of starving the response',
+    budgetFrom('') === DEFAULT_BUDGET_MS)
+  check('a negative budget falls back to the default', budgetFrom('-5') === DEFAULT_BUDGET_MS)
+}
+
+// ── the bridge surface never re-probes with stat() ──────────────────────────
+
+{
+  // The fake proves the *reader* never calls `stat()`, but the regression that
+  // started all this lived in the bridge's list handler. Pin the integration
+  // surface too: `lib/index.js` must not grow a `.stat(` probe.
+  const source = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8')
+  check('lib/index.js contains no .stat() probe for the title path', !/\.stat\s*\(/.test(source))
+}
+
 // ── the deferred pass: fills the rest and reports each title once ───────────
 
 {
@@ -253,12 +279,57 @@ function makeReader({ titles, loadMs, cacheLimit, onTitle, stopped } = {}) {
 }
 
 {
-  // Two overlapping deferred passes must not double-read the shared corpus.
+  // Two overlapping deferred passes must not double-read the shared corpus
+  // (dedup is by cache key).
   const snaps = snapshots(8)
   const { reader, fake } = makeReader({ titles: {}, loadMs: 2 })
   await Promise.all([reader.resolveRemaining(snaps), reader.resolveRemaining(snaps)])
   check('overlapping deferred passes read each log once', fake.state.loads.length === 8,
     `loads=${fake.state.loads.length}`)
+}
+
+{
+  // A call that lands mid-pass must **merge**, not vanish: the running pass
+  // only knows its own snapshots, so dropping the newcomer would strand titles
+  // for sessions the running pass has never heard of (a `session/list` over a
+  // corpus that changed while the pass ran).
+  const batch = (prefix) => Array.from({ length: 2 }, (_, i) => ({
+    header: { id: `${prefix}${i}`, cwd: '/w' }, revision: '1', sizeBytes: 1024,
+  }))
+  const snapsA = batch('a')
+  const snapsB = batch('b')
+  const reported = []
+  const { reader, fake } = makeReader({
+    titles: { a0: 'A0', a1: 'A1', b0: 'B0', b1: 'B1' },
+    onTitle: (snapshot, title) => reported.push(`${snapshot.header.id}=${title}`),
+  })
+  const first = reader.resolveRemaining(snapsA)
+  const second = reader.resolveRemaining(snapsB) // lands while the first runs
+  await Promise.all([first, second])
+  check('a mid-pass call merges its snapshots into the running pass',
+    fake.state.loads.length === 4, `loads=${fake.state.loads.join(',')}`)
+  check('merged-in snapshots are reported too',
+    [...reported].sort().join(',') === 'a0=A0,a1=A1,b0=B0,b1=B1', `reported=${reported.join(',')}`)
+}
+
+{
+  // The client seam is one more thing that must not veto the pass.
+  const reported = []
+  const { reader } = makeReader({
+    titles: { s0: 'a', s1: 'b', s2: 'c' },
+    onTitle: (snapshot) => {
+      reported.push(snapshot.header.id)
+      if (snapshot.header.id === 's0') throw new Error('client seam gone')
+    },
+  })
+  let threw = false
+  try {
+    await reader.resolveRemaining(snapshots(3))
+  } catch {
+    threw = true
+  }
+  check('a throwing onTitle neither rejects the pass nor drops later titles',
+    !threw && reported.join(',') === 's0,s1,s2', `reported=${reported.join(',')}`)
 }
 
 {
