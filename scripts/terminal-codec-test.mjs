@@ -88,11 +88,25 @@ check('stripShellPrefix("git status") → "git status" (no shell prefix)',
   stripShellPrefix('git status') === 'git status')
 check('stripShellPrefix(undefined) → ""', stripShellPrefix(undefined) === '')
 
-// ── resultText: full text, undefined on error ──────────────────────────────
+// ── resultText: full text, undefined on error, both dsh content shapes ─────
+// dsh 0.1.5 nests the text under a `tool-result` block; 0.1.7 flattens it to a
+// top-level text block. A shape-only read returned '' on the other line, which
+// blanked every terminal card body.
 
 {
   const event = textEvent('line1\nline2')
-  check('resultText joins text blocks', resultText(event) === 'line1\nline2')
+  check('resultText joins nested text blocks (0.1.5 shape)', resultText(event) === 'line1\nline2')
+}
+{
+  const flat = { data: { message: { content: [{ type: 'text', text: 'line1\nline2' }] } } }
+  check('resultText joins flat text blocks (0.1.7 shape)', resultText(flat) === 'line1\nline2')
+}
+{
+  const mixed = { data: { message: { content: [
+    { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'nested' }] },
+    { type: 'text', text: 'flat' },
+  ] } } }
+  check('resultText joins a mixed block list in order', resultText(mixed) === 'nested\nflat')
 }
 check('resultText(error event) → undefined', resultText(textEvent('x', { code: 'E' })) === undefined)
 {

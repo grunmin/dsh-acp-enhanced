@@ -242,6 +242,11 @@ try {
     && t.update.toolCallId === bashCall?.update?.toolCallId)
   check('bash card completes', bashDone?.update?.status === 'completed',
     JSON.stringify(bashDone?.update?.status))
+  // 0.1.7 moved the result's call id to `message.toolCallId`; a shape-only read
+  // emitted the update with no id, so the editor could not match it to the card.
+  check('bash completion carries a real toolCallId',
+    typeof bashDone?.update?.toolCallId === 'string' && bashDone.update.toolCallId === bashCall?.update?.toolCallId,
+    JSON.stringify(bashDone?.update?.toolCallId))
   check('bash tool_call_update carries terminal_exit meta',
     bashDone?.update?._meta?.terminal_exit?.terminal_id === bashCall?.update?.toolCallId,
     JSON.stringify(bashDone?.update?._meta))
@@ -309,8 +314,32 @@ try {
     check('tool_call rawInput carries the command',
       typeof termCall.update.rawInput?.command === 'string' && termCall.update.rawInput.command.length > 0,
       JSON.stringify(termCall.update.rawInput))
+    // A client-created terminal only exists after execute starts, so the card
+    // gets it through a tool_call_update. ACP renders the terminal (and its
+    // live output) only when the tool call embeds it — without this the
+    // execute-kind card had no body, because the editor hides rawOutput there.
+    const termAttached = received.toolCalls.find((t) => t.kind === 'tool_call_update'
+      && t.update.toolCallId === termCall.update.toolCallId
+      && t.update.content?.some((c) => c.type === 'terminal'))
+    check('zed_terminal card embeds the client terminal',
+      termAttached?.update?.content?.some((c) => c.type === 'terminal' && c.terminalId === 'term-1'),
+      JSON.stringify(termAttached?.update))
+    // Regression guard for the pinned card: the completion must carry the SAME
+    // toolCallId the call reported (0.1.7 moved it to message.toolCallId, and a
+    // shape-only read emitted the update without an id, so it never matched).
+    const termDone = received.toolCalls.find((t) => t.kind === 'tool_call_update'
+      && t.update.toolCallId === termCall.update.toolCallId && t.update.status === 'completed')
+    check('zed_terminal card completes under the same toolCallId',
+      termDone !== undefined, JSON.stringify(received.toolCalls
+        .filter((t) => t.kind === 'tool_call_update')
+        .map((t) => ({ id: t.update.toolCallId, status: t.update.status }))))
+    // The embedded terminal renders its own output; the completion must not
+    // also push a text body (that duplicate only belongs on replay, where no
+    // live terminal exists — see toolResultUpdateFor).
+    check('live zed_terminal completion does not duplicate the terminal output as text',
+      termDone?.update?.content === undefined, JSON.stringify(termDone?.update?.content))
   } else {
-    console.log('NOTE  no zed_terminal tool_call this run; kind/rawInput checks skipped')
+    console.log('NOTE  no zed_terminal tool_call this run; kind/rawInput/attach checks skipped')
   }
   check('tool_call_update carries an output preview',
     received.toolCalls.some((t) => t.kind === 'tool_call_update' && typeof t.update.rawOutput === 'string' && t.update.rawOutput.length > 0),
