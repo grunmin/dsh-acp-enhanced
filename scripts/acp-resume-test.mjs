@@ -162,13 +162,17 @@ try {
   // Regression guard for the pinned context ring: the harness does not re-emit
   // `request/context` for an unchanged route, so a bridge that only watches the
   // live event resumes with no capacity and reports `size === used` (100%).
-  // A route that declares no capacity on part 1 is skipped rather than failed.
+  // A route whose adapter declares no window has no denominator to lose, so
+  // that run cannot exercise the regression — say so rather than bank a pass.
   const resumedUsage = usage[usage.length - 1]
-  check('resumed usage keeps the fresh turn\'s context window (ring denominator survives)',
-    freshUsage === undefined || resumedUsage === undefined
-      || freshUsage.size <= freshUsage.used
-      || resumedUsage.size === freshUsage.size,
-    `fresh used=${freshUsage?.used} size=${freshUsage?.size}; resumed used=${resumedUsage?.used} size=${resumedUsage?.size}`)
+  if (freshUsage === undefined || resumedUsage === undefined || freshUsage.size === freshUsage.used) {
+    console.log('NOTE  the routed model declares no context window; the ring-denominator check is vacuous this run'
+      + ` (fresh used=${freshUsage?.used} size=${freshUsage?.size}, resumed used=${resumedUsage?.used} size=${resumedUsage?.size})`)
+  } else {
+    check('resumed usage keeps the fresh turn\'s context window (ring denominator survives)',
+      resumedUsage.size === freshUsage.size,
+      `fresh used=${freshUsage.used} size=${freshUsage.size}; resumed used=${resumedUsage.used} size=${resumedUsage.size}`)
+  }
 
   // ── session/list ──────────────────────────────────────────────────────────
   // `session/delete` is gone (no public persistence delete exists), so the
