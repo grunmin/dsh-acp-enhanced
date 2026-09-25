@@ -10,6 +10,7 @@ import {
   resultText,
   shellCallCwd,
   stripShellPrefix,
+  terminalCommandLine,
   toolKindFor,
 } from '../lib/terminal-codec.js'
 
@@ -99,6 +100,21 @@ check('resultText(error event) → undefined', resultText(textEvent('x', { code:
   check('marker mid-body is kept', parsed.body === 'line\n[exit code: 9]\ntail' && parsed.exitCode === 0,
     JSON.stringify(parsed))
 }
+
+// ── terminalCommandLine: the card title for an editor-run command ──────────
+// `zed_terminal` takes a program plus argv, so `command` alone titles the card
+// "bash"; the payload of a `-c`-style invocation is the real command.
+
+check('a shell payload wins over its evaluator',
+  terminalCommandLine({ command: 'bash', args: ['-lc', 'pwd && ls'] }) === 'pwd && ls')
+check('-c is recognised too',
+  terminalCommandLine({ command: '/bin/sh', args: ['-c', 'echo hi'] }) === 'echo hi')
+check('a program with argv joins into one line',
+  terminalCommandLine({ command: 'node', args: ['-e', 'console.log(1)'] }) === 'node -e console.log(1)')
+check('a whole command line stays itself',
+  terminalCommandLine({ command: 'pwd && ls', description: 'Inspect' }) === 'pwd && ls')
+check('no command yields undefined',
+  terminalCommandLine({ cwd: '/tmp' }) === undefined && terminalCommandLine(undefined) === undefined)
 
 // ── shellCallCwd: absolute wins, relative resolves, fallback to header ─────
 
