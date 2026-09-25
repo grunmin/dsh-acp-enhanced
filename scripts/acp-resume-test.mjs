@@ -47,10 +47,20 @@ const client = () => ({
     }
     if (kind === 'tool_call') history.push({ kind, name: params.update.title })
     if (kind === 'tool_call_update') history.push({ kind, status: params.update.status })
+    // Context-ring telemetry. `size` is the model's context window and must
+    // survive a resume: the harness logs `request/context` once and does not
+    // re-emit it for an unchanged route, so the ring denominator is the one
+    // thing a resumed-session regression silently collapses into `used`.
+    if (kind === 'usage_update') {
+      usage.push({ used: params.update.used, size: params.update.size })
+    }
   },
 })
 
 const history = []
+const usage = []
+/** Last usage sample of part 1, compared with part 2's (ring denominator). */
+let freshUsage
 let conn
 try {
   // ── Part 1: create + prompt (persist) ────────────────────────────────────
@@ -70,6 +80,10 @@ try {
       prompt: [{ type: 'text', text: '只回复三个字：你好呀' }],
     })
     check('part1 prompt settles', p1.stopReason === 'end_turn', p1.stopReason)
+    // The denominator the resumed turn must reproduce. A route that declares no
+    // capacity reports `size === used` here too, which the assertion below
+    // treats as "nothing to preserve".
+    freshUsage = usage[usage.length - 1]
     // Switch the permission preset through the ACP mode surface. The declared
     // public write path (`permissionPresets.set()`) appends the selection and
     // writes BOTH knobs — sandbox mode and approval policy — so the fold on a
@@ -84,6 +98,7 @@ try {
   // ── Part 2: load the persisted session ───────────────────────────────────
   const sid = readFileSync(sidFile, 'utf8')
   history.length = 0
+  usage.length = 0
   const { child, conn: c2 } = spawnBridge()
   conn = c2
   const init = await c2.initialize({
@@ -144,6 +159,16 @@ try {
     prompt: [{ type: 'text', text: '接着说一句话' }],
   })
   check('resumed agent accepts a follow-up', p2.stopReason === 'end_turn', p2.stopReason)
+  // Regression guard for the pinned context ring: the harness does not re-emit
+  // `request/context` for an unchanged route, so a bridge that only watches the
+  // live event resumes with no capacity and reports `size === used` (100%).
+  // A route that declares no capacity on part 1 is skipped rather than failed.
+  const resumedUsage = usage[usage.length - 1]
+  check('resumed usage keeps the fresh turn\'s context window (ring denominator survives)',
+    freshUsage === undefined || resumedUsage === undefined
+      || freshUsage.size <= freshUsage.used
+      || resumedUsage.size === freshUsage.size,
+    `fresh used=${freshUsage?.used} size=${freshUsage?.size}; resumed used=${resumedUsage?.used} size=${resumedUsage?.size}`)
 
   // ── session/list ──────────────────────────────────────────────────────────
   // `session/delete` is gone (no public persistence delete exists), so the

@@ -18,7 +18,12 @@ ACP 线上。
   上线），代价是中途重试无法收回已发出的半截文本，会以可见的
   `_[stream interrupted — retrying]_` 标记隔开（默认关闭）
 - **完整遥测**：上下文用量环 + 缓存命中率 / TPS / 输入-输出-推理 token / 工具耗时 /
-  轮次计数（`usage_update._meta` 携带全量明细）
+  轮次计数（`usage_update._meta` 携带全量明细）。环的分母是被路由模型声明的
+  `contextWindow`，从会话日志折叠而来，因此恢复（resume）的线程也能保留——harness 只在
+  路由变化时记录一次 `request/context`，路由不变不会重新发出。dsh 自带的
+  `dsh-compaction-basic` 行会在该窗口约 80% 时自动压缩，`standard` / `standard-flash`
+  预设默认挂载；`/compact` 可手动触发。适配器未声明 `contextWindow` 的路由没有分母，
+  此时环报告 `used === size`。
 - **图片支持（多模态）**：当 dsh 组合挂载了附件存储（`dsh-base` 默认装配
   `dsh-attachment-local`）时，会声明 `promptCapabilities.image` 并把粘贴/
   上传的图片持久化进 harness 附件存储——支持视觉的模型（如 `deepseek-v4-flash-vision-exp`）

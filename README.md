@@ -21,7 +21,13 @@ over the ACP wire.
   partial text, so a visible `_[stream interrupted — retrying]_` marker separates the
   seam (off by default)
 - **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
-  tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown)
+  tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown). The
+  ring's denominator is the routed model's declared `contextWindow`, folded from the session
+  log so a resumed thread keeps it (the harness logs `request/context` once and does not
+  re-emit it for an unchanged route). dsh's own `dsh-compaction-basic` row auto-compacts at
+  ~80% of that window and is mounted by the `standard`/`standard-flash` presets; `/compact`
+  forces it manually. A route whose adapter declares no `contextWindow` has no denominator,
+  so the ring reports `used === size`.
 - **Image support (multimodal)**: when the dsh composition mounts an attachment store
   (`dsh-attachment-local`, mounted by default in `dsh-base`), `promptCapabilities.image`
   is advertised and pasted/uploaded images are ingested into the harness's durable attachment
