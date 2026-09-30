@@ -121,9 +121,9 @@ After picking **dsh-acp-enhanced** in Zed's AI Agent panel:
 
 ## Quick start
 
-**Requires `dsh ≥ 0.1.5-rc.2`** (`npm install -g @deepseek-ai/dsh@0.1.5-rc.2`, or any version
+**Requires `dsh ≥ 0.1.5-rc.2`** (`npm install -g @deepseek-ai/dsh@0.2.0-rc.2`, or any version
 in the peer range below); the bridge consumes one declared harness surface on every supported
-line — 0.1.5-rc.2 through 0.1.7 — and never probes older generations at runtime.
+line — 0.1.5-rc.2 through 0.2.0 — and never probes older generations at runtime.
 
 This package follows the official dsh plugin conventions (it declares `dsh.bundle`), so
 installation matches any official bundle: **one command** — auto-initializes the profile,
@@ -349,22 +349,38 @@ dsh --profile acp-enhanced --dump-config   # where each row comes from
 ## Compatibility
 
 One bridge binary, one declared harness surface: **dsh ≥ 0.1.5-rc.2** (peer range
-`^0.1.5-rc.2 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1`). All three lines in that range are
-**boot-verified** — handshake, profile settle and a real `session/new` — on every CI run, plus
-a cross-generation link check. The bridge consumes only the harness's **declared** surface:
-services in `docs/capability-seams.md`, events in `docs/event-producer-consumer.md`, published
-package exports. `scripts/api-surface-check.mjs` fails on anything else (a blocking CI step).
-There is no feature sniffing and no generation matrix: 0.1.7 needed exactly two adaptations —
-a **member probe** (`presets.resolveMountable`, private through 0.1.6 and gone in 0.1.7,
-replaced there by `resolve()` plus the row's own `broken` verdict) and a **generation-gated
-row** in `cordis.patch.yml` for the repackaged agent-preset roster, which reads the booting
-installation's own manifest version (below). A host without either falls back to the older
-shape; neither path can fail a boot.
+`^0.1.5-rc.2 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2`). All four lines in that range
+are **boot-verified** — handshake, profile settle and a real `session/new` — on every CI run,
+plus a cross-generation link check and a `scripts/support-claim-test.mjs` guard that pins this
+paragraph's claim against npm's own semver. The bridge consumes only the harness's **declared**
+surface: services in `docs/capability-seams.md`, events in
+`docs/event-producer-consumer.md`, published package exports. `scripts/api-surface-check.mjs`
+fails on anything else (a blocking CI step). There is no feature sniffing and no generation
+matrix: 0.1.7 needed exactly two adaptations — a **member probe**
+(`presets.resolveMountable`, private through 0.1.6 and gone in 0.1.7, replaced there by
+`resolve()` plus the row's own `broken` verdict) and a **generation-gated row** in
+`cordis.patch.yml` for the repackaged agent-preset roster, which reads the booting
+installation's own manifest version (below); 0.2.0 needed **none** (every package the bridge
+imports changed only by version, and its one new export is additive). A host without either
+falls back to the older shape; neither path can fail a boot.
+
+The one thing that does fail silently is the **host's own peer gate**: from 0.1.7
+`@deepseek-ai/dsh-app-boot` checks every bundle's declared `@deepseek-ai/dsh*` peers against
+the running CLI version and, when they do not match, drops that bundle's whole patch layer with
+a single stderr line (`dsh: skipping profile bundle "…"`). A range that stops one line short is
+therefore not a warning but a missing bridge — which is why the range above is both declared
+*and* booted per line. The install path is stricter still: from 0.1.7 the plugin manager also
+resolves **every row `name` in the bundle's patch files** and runs the same gate on each package,
+rejecting the whole installation (`incompatible-version`) when one disagrees — even a row that the
+generation gate disables on that very line. That is why this bridge declares a peer only for the
+packages it actually links against, and lets the ≤ 0.1.6 roster row resolve from the CLI's own
+installation instead.
 
 ### Support policy
 
 | Bridge | Supported dsh lines | What changed |
 |---|---|---|
+| **0.10.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2` | 0.2.0 support: no `lib/` change was needed, but the declared range was one line short of the host's peer gate — on a 0.2.0 CLI the gate dropped the bridge's whole patch layer while the bridge's own helper still called it supported. The ≤ 0.1.6 roster package is no longer a declared peer either: the install path evaluates **every patch row's** package, so a line-gated declaration made `dsh plugin add` fail outright on 0.2.0. The helper now matches npm's ceiling semantics (`<0.2.0-0`), and a new guard keeps the range, the CI matrix and the link-check generations in agreement |
 | **0.9.1** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1` | 0.1.7 support: the agent-preset roster was repackaged upstream, so the bridge ships both shapes (generation-gated row) and inlines the four preset declarations |
 | **0.9.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |
 | 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1` (unreleased) | 0.1.3+ live-stream seam; 0.1.5 persistence handle API |
@@ -375,9 +391,12 @@ The rules behind that table:
 - **A new dsh API line gets a new bridge release, not a wider runtime probe.** Probing is how
   0.7.x absorbed 0.1.1 → 0.1.5, and it is why that support rotted silently. 0.1.7 is a
   repackaging rather than a new API line, so 0.9.1 absorbs it in one patch release — and the
-  probe it needs is a single member check, not a generation matrix.
+  probe it needs is a single member check, not a generation matrix. 0.2.0 is not even that:
+  every consumed package changed by version only, so the release is a declaration change plus
+  the guard that keeps the declaration honest.
 - **The floor moves only with a bridge minor, and never silently**: the launcher warns before
-  booting a CLI below the range, and the doctor stops with `RESULT FAIL — CLI too old`.
+  booting a CLI outside the range, and the doctor stops with `RESULT FAIL — CLI too old` (below
+  the floor) or `RESULT FAIL — CLI line not supported by this bridge` (beyond the ceiling).
 - **A line is dropped by publishing a bridge that says so**; the previous line stays on the
   `feat/dsh-0.1.3-plus-support` branch for users who cannot move.
 - **Watch the next line before it is released**: the scheduled `canary` workflow installs the
@@ -404,7 +423,7 @@ supported line:
 
 | Surface | ≤ 0.1.6 | ≥ 0.1.7 | What the bridge does |
 |---|---|---|---|
-| roster row | `@deepseek-ai/dsh-agent-presets`, `config.default` | `@deepseek-ai/dsh-agent-preset-registry`, `config.default` | both rows ship; each is `disabled` by a generation gate, so exactly one activates (they provide the same service name, and a second `provide` would throw) |
+| roster row | `@deepseek-ai/dsh-agent-presets`, `config.default` | `@deepseek-ai/dsh-agent-preset-registry`, `config.default` | both rows ship; each is `disabled` by a generation gate, so exactly one activates (they provide the same service name, and a second `provide` would throw). Both resolve from the running CLI's own installation — neither is a `peerDependency` of this package, and 0.10.0 removed the legacy one for exactly that reason (see below) |
 | shipped presets | bundled inside the roster package (`system` root) | one `@deepseek-ai/dsh-agent-preset` declaration each — whoever wants them ships them (`@deepseek-ai/dsh-web-app` ships `presets/*.patch.yml` layers) | the four declarations are inlined into `cordis.patch.yml` verbatim from the web-app bundle (MIT, 0.1.7-rc.2), with the display metadata the old roster's per-preset `preset.yml` carried added back — 0.1.7 publishes no `name` for a shipped id |
 | mountable resolution | private `presets.resolveMountable(id)` | `presets.resolve(id)` returns a broken row on purpose; every mounting path refuses it *after* resolution | member probe: `resolveMountable` when present, otherwise `resolve()` plus the row's own `broken` reason |
 
@@ -495,6 +514,70 @@ Two things outside this package to check, both silent when wrong:
 - **user-authored presets** in `$DSH_HOME/.agent-presets/` are no longer discovered — see
   [Your own presets](#your-own-presets) above.
 
+### What 0.10.0 changed (additive: dsh 0.2.0 support)
+
+`dsh` 0.2.0 (RC line; no stable release yet) is a **client/UI release**. Everything this bridge
+imports is unchanged apart from versions: the ten harness packages it statically imports differ
+from 0.1.7-rc.2 by `package.json` alone, `@deepseek-ai/dsh-session` adds one export
+(`ToolCallRecovery`, the upstream fix for "a tool-scheduling failure left the conversation
+unable to continue"), and the two generated catalogs gained `ctx.otel` and
+`ctx.productAnalytics` with **no removals** — 0 services and 0 events disappeared.
+
+What did change is the host's **peer gate**, and that is what this release is about:
+
+| | ≤ 0.1.7 | ≥ 0.2.0 for a bridge that stops at 0.1.7 |
+|---|---|---|
+| `dsh plugin add` of the bundle | installs | hard **`incompatible-version`** failure, offering an exact-version exemption |
+| boot of a profile carrying it | the bundle loads | the CLI **drops the bundle's entire patch layer** and prints one stderr line: `dsh: skipping profile bundle "dsh-acp-enhanced": … peerDependencies {…}` |
+| the launcher's own warning | — | *nothing*: the old helper's ceiling was never given semver's `-0`, so it reported `0.2.0-rc.2` as supported while the host had already discarded the bridge |
+
+Five things were fixed, none of them in `lib/`:
+
+- every remaining `@deepseek-ai/dsh*` peer gained `|| ^0.2.0-rc.2`; the gate checks the *running
+  version* against every declared range, so one unwidened entry is enough to lose the bundle;
+- `@deepseek-ai/dsh-agent-presets` was **removed** from `peerDependencies`. It is the roster of the
+  ≤ 0.1.6 lines and has no release past 0.1.6, so declaring it made pnpm pull it into every 0.2.0
+  profile — and the *install* path checks more than the manifest: `bundleComponentManifests`
+  resolves every row `name` in the bundle's patches and runs the same gate on each resolved
+  package, so that unused 0.1.6 package made the installation fail with `incompatible-version` even
+  after the range was widened. The row itself stays (it is generation-gated off on every later
+  line) and still resolves from the running CLI's own closure — which is exactly how the sibling
+  `@deepseek-ai/dsh-agent-preset-registry` row has worked since 0.9.1. Measured on the four lines:
+  the legacy package resolves from the 0.1.5 and 0.1.6 installs and not from 0.1.7 or 0.2.0, which
+  is why 0.1.5/0.1.6 still log the *legacy* roster's `preset "…" not found` while 0.1.7/0.2.0 log
+  the registry's `Unknown agent preset`;
+- `scripts/lib/dsh-version.mjs` now expands a caret ceiling to `<x.y.0-0`, matching
+  `semver.satisfies(…, { includePrerelease: true })`, so a prerelease of the ceiling version
+  (`0.2.0-rc.2` against `^0.1.7-alpha.1`) is correctly *outside*; the doctor's failure message
+  distinguishes "too old" from "unverified line";
+- `scripts/support-claim-test.mjs` (new, blocking CI) asserts that the declared range, the CI
+  boot matrix, the `compat-check` generations and the helper all agree, that the helper matches
+  npm's semver on every line edge, and that **every declared peer is also a devDependency** — the
+  pinned closure `lib/` links against. That last check is what keeps a line-gated row package from
+  creeping back into `peerDependencies`;
+- the **doctor and the launcher** report it. `acp-doctor.mjs` classifies a skipped bundle as
+  `LAYER manifest-gate` and its `FIX` splits *this bridge* from *a third party*; the launcher
+  translates the same stderr line to `dsh-acp-zed: MANIFEST-GATE …`, which matters because that
+  line is the only failure class that is not a stack trace — the boot continues without the bundle,
+  so nothing else in the log says anything is wrong.
+
+Both gate paths are covered by the smoke and the CI matrix: the install path is what `dsh plugin
+add` exercises on all four lines, and `scripts/acp-smoke-keyless.mjs` asserts that a boot's stderr
+carries no `skipping profile bundle` line.
+
+The generation gate in `cordis.patch.yml` needed no new boundary: `minor > 1` already classifies
+0.2.0 as a registry-roster line, and the four inlined preset declarations are byte-identical to
+`@deepseek-ai/dsh-web-app@0.2.0-rc.2`'s.
+
+**Third-party bundles gate themselves.** `dsh-free-search` and `dsh-mnemon` declare
+0.1.x-only peers, so a 0.2.0 profile skips them too until they widen their own ranges — this
+package cannot fix that. Measured on a profile built by the 0.1.6 CLI (bridge + `dsh-free-search@0.4.39`)
+and then booted by each line: on **0.1.7-rc.2** it is `RESULT READY`; on **0.2.0-rc.2** the skipped
+bundle answers `initialize` and then the profile never settles, so it is not a lost feature but a
+dead profile. `scripts/acp-doctor.mjs` reports exactly that (`BOOT FAILED after the handshake` →
+`LAYER manifest-gate`, naming the skipped bundle), and its fix distinguishes the two cases instead
+of telling you to upgrade this bridge when the skipped bundle is someone else's.
+
 ### Upgrading from a published ≤ 0.7.0
 
 The published `latest` is **0.7.0**, from the pre-0.1.3 API line, so the bridge and the CLI
@@ -509,7 +592,7 @@ have to move **together** — in either order the half-upgraded pair is broken:
 Checklist:
 
 1. `npm install -g @deepseek-ai/dsh@0.1.5-rc.2` (or any version in the peer range above).
-2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.9.1`. Upgrading the bridge is
+2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`. Upgrading the bridge is
    explicit: the profile's dependency is a caret on 0.x, so `dsh plugin update` will **not**
    move you to a new minor by itself.
 3. Booted the profile from a checkout, or set `DSH_PATH` before? The old launcher moved you
@@ -549,7 +632,7 @@ under that home, and dsh heals it to whichever CLI booted last. So:
 Current resolutions are always visible:
 
 ```sh
-node scripts/compat-check.mjs   # dev checkout: installs the 0.1.5-rc.2, 0.1.6-alpha.2 and 0.1.7-rc.2 sets and imports the bridge from each
+node scripts/compat-check.mjs   # dev checkout: installs the 0.1.5-rc.2, 0.1.6-alpha.2, 0.1.7-rc.2 and 0.2.0-rc.2 sets and imports the bridge from each
 node <pkg>/scripts/acp-doctor.mjs   # CLI + closure versions, bundles, and one real boot (shipped)
 ```
 
@@ -598,16 +681,19 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 ```
 
 It prints the CLI + version, the home, the profile, every bundle + version, the supported
-peer range and the closure version, then classifies the boot into one of three layers:
+peer range and the closure version, then classifies the boot into one of four layers:
 
 | Layer | Signature in `dsh`'s stderr | What it means | Fix |
 |---|---|---|---|
+| **manifest-gate** | `skipping profile bundle "<name>": … peerDependencies {…}` | the CLI's peer gate rejected a bundle's declared `@deepseek-ai/dsh*` peers and dropped its whole patch layer before the loader ever saw it. When the name is `dsh-acp-enhanced` the bridge itself is gone; when it is a third-party bundle the profile answers `initialize` and then never settles | The doctor's `FIX` names the skipped bundle — upgrade the CLI inside *that* bundle's declared range, upgrade the bundle itself, or take it out of the profile. Upgrading this bridge cannot help when the skipped bundle is a third party's |
 | **link-time** | `does not provide an export named …`, `SyntaxError: The requested module …` | the booting CLI's closure cannot satisfy an import this bridge performs | `node <pkg>/scripts/acp-doctor.mjs` — if it prints `LAYER link-time`, align the generation: restart every other dsh process under this home (the shared closure heals to whichever CLI booted last), or pin this launcher with `DSH_PATH=<matching dsh>` |
 | **mount-time** | `failed to apply loader entry …`, `… requires … in the Host scope`, `duplicate loader entry id: …` | the loader rejected one entry and rethrew, so the whole plugin tree is down | `node <pkg>/scripts/acp-doctor.mjs` prints `SUBJECT <entry> (<module>)` — install the missing module, disable that row (`- id: <entry>` + `disabled: true` in the user layer), or trim `dsh.profile.bundles` to `@deepseek-ai/dsh-base` + `dsh-acp-enhanced`. For a duplicate id, delete the row from your user layer (the bundle patch owns it) |
 | **run-time** | `… is not a function` after a successful handshake | the bridge reached a harness service this CLI generation does not provide | `npm install -g @deepseek-ai/dsh@<version in the supported range>` (see [Compatibility](#compatibility)) |
 
-The launcher translates the same three signatures on **stderr** while Zed boots (stdout is
-the ACP wire), so the agent log already carries the layer and the fix.
+The launcher translates the same four signatures on **stderr** while Zed boots (stdout is
+the ACP wire — and the manifest-gate line is the only one that is not a stack: the boot continues
+without that bundle, so the translated line is all the log gets), so the agent log already
+carries the layer and the fix.
 
 | Symptom | Locate | Fix |
 |---|---|---|
@@ -623,17 +709,19 @@ the ACP wire), so the agent log already carries the layer and the fix.
 | Context usage missing | `/status` in the thread | A "phantom provider" route was picked; point the profile's provider at a real route |
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
 | `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
-| A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> loader entries never activated` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
+| A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> inactive items` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
+| `dsh: skipping profile bundle "<name>": … peerDependencies {…}` — a whole bundle is gone after a dsh upgrade | that stderr line, the agent's stderr, or `acp-doctor.mjs` (a skipped bundle reports `LAYER manifest-gate`; a skipped third-party bundle also leaves the profile unable to settle) | The CLI's peer gate: from 0.1.7 `dsh-app-boot` checks each bundle's declared `@deepseek-ai/dsh*` peers against the running version and drops the bundle's entire patch layer when they do not match (the install path refuses it outright as `incompatible-version`). Only the bundle's publisher can widen the range — upgrade it (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`), or pin the CLI to a line that bundle declares. This bridge declares all four lines above; `dsh-free-search` and `dsh-mnemon` still declare 0.1.x only, and when one of *those* is the skipped bundle, upgrading this bridge cannot help |
 | Session sidebar empty / slow to fill, bridge ≤ 0.9.0 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge to ≥ 0.9.1 — it answers in seconds and streams the remaining titles as `session_info_update` |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
-| A thread is dead after a Stop: `Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`, and a config switch in the same thread fails with `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1` — that thread's last `turn/end` carries `reason=null`, and loading it again fails the same way | Bridge ≤ 0.9.1 passed `new Error(...)` as the harness cancel cause, but `AgentCancelCause` is a closed union (`{kind:'user'|'parent'|'disposed'|'hook'}`). The harness's own turn close-out then threw on `assertNever` and persisted `turn/end {reason: null}`; `dsh-notification` ≤ 0.1.4 folds that as `reason.kind`, so every projection read in that session (prompt, config switch, `session/load`) threw afterwards. The thread itself cannot be recovered — start a new one — and upgrading the bridge removes the cause (guarding `reason?.kind` in `dsh-notification` only stops the throw; the unreadable event stays in the log) |
+| A thread is dead after a Stop: `Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`, and a config switch in the same thread fails with `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1` — that thread's last `turn/end` carries `reason=null`, and loading it again fails the same way | Bridge ≤ 0.9.1 passed `new Error(...)` as the harness cancel cause, but `AgentCancelCause` is a closed union (`{kind:'user'\|'parent'\|'disposed'\|'hook'}`). The harness's own turn close-out then threw on `assertNever` and persisted `turn/end {reason: null}`; `dsh-notification` ≤ 0.1.4 folds that as `reason.kind`, so every projection read in that session (prompt, config switch, `session/load`) threw afterwards. The thread itself cannot be recovered — start a new one — and upgrading the bridge removes the cause (guarding `reason?.kind` in `dsh-notification` only stops the throw; the unreadable event stays in the log) |
 | Need detailed diagnostics | — | `ACP_DEBUG=1` (stderr lifecycle trace) and `ACP_LOG=/tmp/acp.jsonl` (per-event JSONL with timings) |
 
 ## Development
 
 ```sh
 pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
-node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 / 0.1.7-rc.2 scratch installs)
+node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 scratch installs)
+node scripts/support-claim-test.mjs   # the declared range, the CI matrix and the helper agree with npm semver (blocking CI step)
 node scripts/api-surface-check.mjs    # public-surface guard: no undeclared harness API (blocking CI step)
 node scripts/pack-check.mjs           # package integrity: entry points, modes, shipped-file references (blocking CI step)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
@@ -657,7 +745,7 @@ scripts/init-acp-home.sh              # optional: bootstrap an *isolated* home (
 ```
 
 DevDependency pins for the harness packages use the line's prerelease range (currently
-`^0.1.7-alpha.1`, which resolves to the exact closure the pinned `@deepseek-ai/dsh` CLI
+`^0.2.0-rc.2`, which resolves to the exact closure the pinned `@deepseek-ai/dsh` CLI
 itself declares), so the repo's tree and a fresh CLI install resolve one coherent family —
 exact patch pins here mixed with the CLI's
 range-resolved closure produce a split closure (two versions of one name) that breaks
