@@ -39,7 +39,16 @@ if (setup.status !== 0) {
   console.error('FAIL  could not create profile via dsh plugin add')
   process.exit(1)
 }
-const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'inherit'] })
+const child = spawn('dsh', ['--profile', profile], { stdio: ['pipe', 'pipe', 'pipe'] })
+// The boot's own stderr is forwarded (CI needs it in the log) *and* kept: a
+// bundle the host's peer gate rejects does not fail the boot — the profile just
+// silently loses that bundle's whole patch layer — so the only evidence is this
+// line, and it has to make the smoke leg red.
+let bootStderr = ''
+child.stderr.on('data', (data) => {
+  bootStderr += String(data)
+  process.stderr.write(data)
+})
 const pending = new Map()
 const notifications = []
 /** Wire arrival order: responses vs notifications, for ordering assertions. */
@@ -345,6 +354,13 @@ async function main() {
         fallbackChild.kill()
       }
     }
+
+    // The host's peer gate reports a rejected bundle on stderr and keeps
+    // booting; without this check the profile would pass every wire assertion
+    // while the bridge's patch layer had been discarded.
+    check('no profile bundle was skipped by the host peer gate',
+      !/skipping profile bundle/.test(bootStderr),
+      bootStderr.split('\n').find((line) => line.includes('skipping profile bundle')) ?? '')
 
     console.log(failed === 0 ? 'ALL CHECKS PASSED' : `${failed} CHECK(S) FAILED`)
   } finally {

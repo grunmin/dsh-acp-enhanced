@@ -29,7 +29,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isSupported } from './lib/dsh-version.mjs'
+import { compareVersions, floorOfRange, isSupported } from './lib/dsh-version.mjs'
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const launcher = join(repoDir, 'scripts', 'dsh-acp-zed.sh')
@@ -60,7 +60,15 @@ const readJson = (file) => {
 }
 
 /** The bridge's declared harness range, from its own package.json. */
-const supportedRange = readJson(join(repoDir, 'package.json'))?.peerDependencies?.['@deepseek-ai/dsh-agent'] ?? '(undeclared)'
+const bridgeManifest = readJson(join(repoDir, 'package.json'))
+const bridgeVersion = bridgeManifest?.version
+const supportedRange = bridgeManifest?.peerDependencies?.['@deepseek-ai/dsh-agent'] ?? '(undeclared)'
+/** The name the host prints for this bridge in a skipped-bundle line. */
+const bridgeName = bridgeManifest?.name ?? 'dsh-acp-enhanced'
+const isSelfBundle = (name) => name === bridgeName
+/** The range's floor: below it the CLI is too old, at or above it (yet outside
+ *  the range) the CLI is from a line this bridge has not been verified against. */
+const supportedFloor = floorOfRange(supportedRange)
 
 /** Resolve the dsh CLI the same way the launcher does (directory-first DSH_PATH). */
 function resolveCli() {
@@ -128,7 +136,27 @@ if (bundles.some((name) => !MINIMAL_BUNDLES.includes(name))) {
  */
 function classify(stderr) {
   const firstOf = (pattern) => stderr.match(pattern)?.[1]
-  // A duplicate loader entry id outranks everything: it is a composition
+  // The CLI's own peer gate outranks every other signature: it is not a loader
+  // failure at all, the boot continues without that bundle's patch layer, and
+  // the fix is a version relationship rather than a row to edit.
+  const skipped = firstOf(/skipping profile bundle "([^"]+)"/)
+  if (skipped !== undefined) {
+    const runtime = firstOf(/is incompatible with dsh ([^\s:]+)/)
+    const subject = `profile bundle ${skipped} rejected by the CLI's peer gate${runtime === undefined ? '' : ` (dsh ${runtime})`}`
+    if (isSelfBundle(skipped)) {
+      return {
+        layer: 'manifest-gate',
+        subject,
+        fix: `this CLI checked the bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped this bridge's whole patch layer — so the capability is silently gone. Upgrade the bridge (\`dsh plugin --profile ${profileName} add dsh-acp-enhanced@${bridgeVersion ?? '?'}\`) or pin the CLI to a line the bridge declares: ${supportedRange}, e.g. npm install -g @deepseek-ai/dsh@<version in that range>.`,
+      }
+    }
+    return {
+      layer: 'manifest-gate',
+      subject,
+      fix: `this CLI checked that bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped its whole patch layer. This bridge is not the one being skipped, so upgrading it will not help: upgrade \`${skipped}\` if a release declares this CLI line, take it out of the profile, or pin the CLI to a line that bundle declares. Do not leave it: measured on 0.2.0-rc.2, a profile whose third-party bundle is skipped answers \`initialize\` and then never settles.`,
+    }
+  }
+  // A duplicate loader entry id outranks everything else: it is a composition
   // conflict (the same row shipped by two layers), not a generation problem,
   // and its fix is a specific line to delete.
   const duplicate = firstOf(/duplicate loader entry id: *([^\s,)]+)/)
@@ -192,7 +220,7 @@ function classify(stderr) {
 function evidenceLines(lines) {
   const interesting = lines
     .map((line) => line.trim())
-    .filter((line) => /Error|failed to (?:apply|import) loader entry|does not provide an export|Host scope|Cannot find (?:package|module)/.test(line))
+    .filter((line) => /Error|failed to (?:apply|import) loader entry|does not provide an export|Host scope|Cannot find (?:package|module)|skipping profile bundle/.test(line))
     .filter((line) => !/^throw /.test(line))
     .map((line) => (line.length > 240 ? `${line.slice(0, 240)}…` : line))
   const picked = []
@@ -222,19 +250,27 @@ function evidenceLines(lines) {
 function inactiveEntries(lines) {
   const text = lines.join('\n')
   const count = /warning: (\d+) entr(?:y|ies) did not activate/.exec(text)?.[1]
-  if (count === undefined) return []
   const inactive = []
+  // A bundle the host's peer gate rejected never reaches the loader, so it has
+  // no "did not activate" entry of its own — and a boot that skipped a bundle
+  // prints no activation count at all. Collect these independently of it, or
+  // the one line that names the missing capability is dropped on the floor.
   for (const line of lines) {
-    const match = /^(\S+) \(([^)]+)\): (\S.*)$/.exec(line.trim())
-    if (match !== null) {
-      const reason = match[3]
-      inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
+    if (!/skipping profile bundle/.test(line)) continue
+    const trimmed = line.trim()
+    inactive.push(trimmed.length > 240 ? `${trimmed.slice(0, 240)}…` : trimmed)
+  }
+  if (count !== undefined) {
+    for (const line of lines) {
+      const match = /^(\S+) \(([^)]+)\): (\S.*)$/.exec(line.trim())
+      if (match !== null) {
+        const reason = match[3]
+        inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
+      }
     }
   }
-  for (const line of lines) {
-    if (/skipping profile bundle/.test(line)) inactive.push(line.trim())
-  }
-  return inactive.length > 0 ? inactive : [`${count} entry/entries did not activate (see the log above)`]
+  if (inactive.length > 0) return inactive
+  return count === undefined ? [] : [`${count} entry/entries did not activate (see the log above)`]
 }
 
 if (!existsSync(profileDir)) {
@@ -243,15 +279,26 @@ if (!existsSync(profileDir)) {
   process.exit(1)
 }
 
-// A CLI below the supported range is the most common upgrade mistake (bridge
-// updated, CLI left behind), and it fails during the profile load with a loader
-// error naming an internal row rather than "your dsh is too old". Diagnose it
-// before booting — the answer is definitive and independent of the profile.
+// A CLI outside the supported range is the most common upgrade mistake, in both
+// directions: the bridge updated and the CLI left behind, or the CLI moved to a
+// line this bridge has not been verified against. Either way it is definitive
+// and independent of the profile, so diagnose it before booting — on the newer
+// side the host's peer gate would otherwise drop this bundle's whole patch layer
+// with one stderr line and keep going.
 if (isSupported(cliVersion, supportedRange) === false) {
+  const belowFloor = supportedFloor !== undefined && compareVersions(cliVersion, supportedFloor) < 0
   console.log('')
-  console.log(`RESULT  FAIL — CLI too old: ${cliVersion} is below the supported range ${supportedRange}`)
-  console.log('        The bridge targets one declared harness API line; older CLIs lack the')
-  console.log('        services and package subpaths it uses, so the profile dies while loading.')
+  if (belowFloor) {
+    console.log(`RESULT  FAIL — CLI too old: ${cliVersion} is below the supported range ${supportedRange}`)
+    console.log('        The bridge targets one declared harness API line; older CLIs lack the')
+    console.log('        services and package subpaths it uses, so the profile dies while loading.')
+  } else {
+    console.log(`RESULT  FAIL — CLI line not supported by this bridge: ${cliVersion} is outside ${supportedRange}`)
+    console.log('        From 0.1.7 the host checks a bundle\'s declared @deepseek-ai/dsh* peers against')
+    console.log('        the running CLI and drops the whole bundle, silently, when they do not match.')
+    console.log('        A CLI from an unverified line therefore boots without this bridge — or refuses')
+    console.log('        the install outright (`incompatible-version`).')
+  }
   console.log('FIX     npm install -g @deepseek-ai/dsh@<version in that range>')
   console.log(`        or pin this launcher to a supported CLI: DSH_PATH=<path-to-dsh> (now ${cli.path ?? 'unresolved'})`)
   process.exit(1)
@@ -365,12 +412,13 @@ if (handshake?.result !== undefined && exited === undefined && failure === undef
   }
   const inactive = inactiveEntries(stderrLines)
   if (inactive.length > 0) {
-    console.log(`DEGRADED ${inactive.length} loader ${inactive.length === 1 ? 'entry' : 'entries'} never activated — the boot`)
+    console.log(`DEGRADED ${inactive.length} inactive ${inactive.length === 1 ? 'item' : 'items'} — the boot`)
     console.log('        continued, so this is a missing feature rather than a failure:')
     for (const line of inactive) console.log(`        ${line}`)
     console.log('FIX     upgrade that bundle (a harness export it imports may have been renamed or')
-    console.log('        removed in this dsh line), or take it out of the profile.')
-    console.log(`RESULT  DEGRADED — ACP works; ${inactive.length} loader ${inactive.length === 1 ? 'entry is' : 'entries are'} not running.`)
+    console.log('        removed in this dsh line, or its declared dsh peers may not match this CLI),')
+    console.log('        or take it out of the profile.')
+    console.log(`RESULT  DEGRADED — ACP works; ${inactive.length} ${inactive.length === 1 ? 'item is' : 'items are'} not running.`)
     process.exit(1)
   }
   console.log('RESULT  READY')

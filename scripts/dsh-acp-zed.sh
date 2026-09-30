@@ -186,7 +186,7 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
 fi
 
 # Boot. dsh reports a broken profile as a raw loader/node stack; translate the
-# three failure classes into one actionable line each, without ever swallowing
+# four failure classes into one actionable line each, without ever swallowing
 # the original diagnostic (Zed shows stderr in its agent log). The translation
 # runs in a process substitution so stdout — the ACP wire — is untouched.
 # (Defined as a function because bash 3.2 cannot parse `case … ;;` directly
@@ -197,6 +197,19 @@ translate_boot_stderr() {
     printf '%s\n' "${line}" >&2
     [ "${hinted}" = 1 ] && continue
     case "${line}" in
+      # The peer gate is the one failure that is *not* a stack: dsh drops the
+      # bundle's whole patch layer and keeps going, so this stderr line is all
+      # the user ever sees. It arrives before any loader output.
+      *"skipping profile bundle"*)
+        pkg="$(printf '%s' "${line}" | sed -n 's/.*skipping profile bundle "\([^"]*\)".*/\1/p')"
+        printf 'dsh-acp-zed: MANIFEST-GATE: this dsh checked the declared @deepseek-ai/dsh* peers of %s, rejected them and dropped that bundle whole.\n' "${pkg:-a profile bundle}" >&2
+        if [ "${pkg:-}" = "dsh-acp-enhanced" ]; then
+          printf '  Upgrade this bridge, or pin the CLI to a line it declares (%s).\n' "${SUPPORTED_RANGE:-the declared peer range}" >&2
+        else
+          printf '  That is not this bridge: upgrade or remove %s, or pin the CLI to a line it declares. Upgrading this bridge cannot widen a third-party range.\n' "${pkg:-it}" >&2
+        fi
+        hinted=1
+        ;;
       *"does not provide an export named"*)
         pkg="$(printf '%s' "${line}" | sed -n "s/.*module '\([^']*\)'.*/\1/p")"
         printf 'dsh-acp-zed: LINK-TIME failure: %s does not export what this bridge imports from it under %s.\n' "${pkg:-a harness bundle}" "${DASH_BIN}" >&2
