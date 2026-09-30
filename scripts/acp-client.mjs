@@ -200,6 +200,24 @@ try {
       cancelResult.stopReason)
   }
 
+  // ── the session survives the cancel ──────────────────────────────────────
+  // Regression guard for the bricked-session bug: a cancel must not leave the
+  // log with a `turn/end` the rest of the stack cannot read. Passing an Error
+  // as the cancel cause (instead of the harness's `AgentCancelCause` union) made
+  // the harness throw while closing the turn and persist `turn/end {reason:
+  // null}`; every later projection read on that session then threw, so this very
+  // prompt failed with "prompt was not queued: Cannot read properties of null
+  // (reading 'kind')", config switches failed the same way, and a `session/load`
+  // of the same session could not even start. Only binds when the cancel really
+  // aborted a turn (the model-won-the-race branch above writes no such event).
+  const afterCancel = await rpc('session/prompt', {
+    sessionId,
+    prompt: [{ type: 'text', text: '只回复两个字：续' }],
+  }).catch((e) => e)
+  check('session still prompts after a cancel (no unreadable turn/end)',
+    !(afterCancel instanceof Error) && afterCancel.stopReason === 'end_turn',
+    afterCancel instanceof Error ? afterCancel.message : afterCancel.stopReason)
+
   console.log(failed === 0 ? '\nALL CHECKS PASSED' : `\n${failed} CHECK(S) FAILED`)
 } catch (error) {
   console.error('\nFATAL:', error.message)

@@ -542,6 +542,7 @@ node <pkg>/scripts/acp-doctor.mjs --profile <name> --home <dsh-home> --timeout 6
 | profile 以前有的能力静默消失（例如 `web_search`） | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> loader entries never activated` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。给这条 dsh 线升级该 bundle——`dsh-free-search` 在 0.1.7 上需要 ≥ 0.4.39，因为 0.4.24 import 的 `SettingsProvider` 已被 `dsh-settings` 删除——或直接移除它 |
 | 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.0 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对『会话库很大』意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥到 ≥ 0.9.1——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
+| Stop 之后线程直接死掉：`Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`，同一线程里改配置项也报 `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1`——该线程最后一条 `turn/end` 的 `reason=null`，再次加载它也一样失败 | 桥 ≤ 0.9.1 把 `new Error(...)` 当作 harness 的取消原因，而 `AgentCancelCause` 是封闭联合（`{kind:'user'|'parent'|'disposed'|'hook'}`）。harness 自己的轮次收尾因此撞上 `assertNever` 抛错，落盘 `turn/end {reason: null}`；`dsh-notification` ≤ 0.1.4 按 `reason.kind` 折叠它，于是该会话之后每次 projection 读取（prompt、改配置、`session/load`）都抛错。该线程本身无法恢复——新开一个；升级桥即可消除根因（在 `dsh-notification` 里用 `reason?.kind` 只是不再抛错，坏事件仍留在日志里） |
 | 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
 ## 开发
@@ -562,6 +563,7 @@ node scripts/stored-titles-test.mjs   # session/list 标题读取器：读取量
 node scripts/session-facts-test.mjs   # 会话日志折叠：runningPreset/isBlank，live 与 stored 共享同一契约（无网络）
 node scripts/context-window-test.mjs  # request/context 折叠：恢复后的环保留分母（无网络）
 node scripts/tool-result-test.mjs     # tool/result 的 id 与正文提取，覆盖各支持代的形状（无网络）
+node scripts/cancel-cause-test.mjs    # 取消原因契约：每处 agent.cancel() 都传 AgentCancelCause 联合成员（无网络）
 node scripts/replay-order-test.mjs    # 重放/回退的分块顺序：思考块先于它产出的回复（无网络）
 node scripts/acp-image-e2e.mjs        # 图片能力端到端（vision 模型段需 API key）
 node scripts/acp-message-fallback-test.mjs  # 实时 seam + assistant/message 回退：seam 确实触发且回复恰好到达一次
