@@ -173,7 +173,8 @@
     #     preset is a separate `@deepseek-ai/dsh-agent-preset` declaration row,
     #     which is the shape `@deepseek-ai/dsh-web-app` ships as its
     #     `presets/*.patch.yml` layers. The four declarations below are that
-    #     bundle's set (MIT, 0.1.7-rc.2), with the display metadata the old
+    #     bundle's set (MIT, 0.1.7-rc.2; **byte-identical on 0.2.0-rc.2** — that
+    #     line repackaged nothing here), with the display metadata the old
     #     roster's per-preset `preset.yml` carried added back: 0.1.7's registry
     #     publishes no `name` for a shipped id (its own surfaces localize the
     #     copy), while this bridge's ACP dropdown and `/preset` render
@@ -188,9 +189,10 @@
     # `profileContext.installAnchor` (0.1.6+; absent on 0.1.5, which is itself
     # the `≤ 0.1.6` answer). That path is the CLI's own package.json, so its
     # `version` names the closure whose roster package the loader will import.
-    # The registry roster starts at 0.1.7 on the 0.1.x line; anything below it —
-    # and any unreadable or future version we cannot classify — keeps the older
-    # shape.
+    # The registry roster starts at 0.1.7 on the 0.1.x line — 0.2.0 is the same
+    # shape and satisfies the gate's first term (`minor > 1`) — while anything
+    # below it, and any unreadable or future version we cannot classify, keeps
+    # the older shape.
     #
     # Why not ask the resolver (`ctx.pluginPackages.packageOf`) instead? That
     # was the first cut, and it is wrong for a `link:`-installed bridge: a
