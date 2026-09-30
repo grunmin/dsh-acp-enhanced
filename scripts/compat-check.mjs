@@ -44,12 +44,13 @@ const bridgeDeps = {
 
 // The supported API generations, all on the `agent/assistant-stream` frames
 // line (0.1.3-alpha.2+) and all consuming the same declared service surface:
-// "frames" is the pinned rc line, "framesNext" the 0.1.6 alpha line, and
-// "framesRegistry" the 0.1.7 line that replaced the preset roster. Each mirrors
-// the repo devDependency ranges (the same ranges the pinned @deepseek-ai/dsh
-// CLI declares), so a fresh resolution matches what a real profile boot heals.
-// `roster` names the agent-preset package that line ships, which the row the
-// bridge's bundle patch inserts must also match.
+// "frames" is the pinned rc line, "framesNext" the 0.1.6 alpha line,
+// "framesRegistry" the 0.1.7 line that replaced the preset roster, and
+// "framesRegistry020" the 0.2.0 line, which kept that roster and moved only the
+// host's peer gate. Each mirrors the repo devDependency ranges (the same ranges
+// the pinned @deepseek-ai/dsh CLI declares), so a fresh resolution matches what
+// a real profile boot heals. `roster` names the agent-preset package that line
+// ships, which the row the bridge's bundle patch inserts must also match.
 const GENERATIONS = {
   frames: {
     label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
@@ -121,6 +122,36 @@ const GENERATIONS = {
       '@deepseek-ai/dsh-skill': '0.1.7-rc.2',
       '@deepseek-ai/dsh-tools': '0.1.7-rc.2',
       '@deepseek-ai/dsh-user-approval': '0.1.7-rc.2',
+    },
+  },
+  // 0.2.0 keeps the registry roster and every imported symbol; what moved is the
+  // host's own peer gate (`evaluatePluginCompatibility`, dsh-app-boot /
+  // dsh-plugin-manager), which compares the running version against a bundle's
+  // declared ranges with real semver. A range that stops at `^0.1.7-alpha.1`
+  // does not contain `0.2.0-rc.2` — caret ceilings expand to `<0.2.0-0` — so the
+  // profile silently drops the bridge's whole patch layer. The pins below are
+  // exactly what @deepseek-ai/dsh@0.2.0-rc.2 declares.
+  framesRegistry020: {
+    label: '0.2.0+ (agent-preset registry API, 0.2 line)',
+    roster: '@deepseek-ai/dsh-agent-preset-registry',
+    deps: {
+      '@deepseek-ai/cordis': '~4.0.4',
+      '@deepseek-ai/cordis-plugin-include': '~1.0.9',
+      '@deepseek-ai/cordis-plugin-loader': '~1.0.5',
+      '@deepseek-ai/dsh': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-agent': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-agent-instructions': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-agent-preset': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-agent-preset-registry': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-invariants': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-llm': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-mcp-client': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-permission-presets': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-session': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-session-query': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-skill': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-tools': '0.2.0-rc.2',
+      '@deepseek-ai/dsh-user-approval': '0.2.0-rc.2',
     },
   },
 }

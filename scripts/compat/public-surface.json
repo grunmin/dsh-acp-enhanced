@@ -19,7 +19,12 @@
     "  - the denylist below, as raw strings",
     "`sessionMethods` records the declared session-log accessors for review; it is",
     "not scanned mechanically — the `session.events` denylist entry is what catches",
-    "a regression in how the log is read."
+    "a regression in how the log is read.",
+    "",
+    "Audited on 2026-09-30 against the 0.2.0 line (dsh-v0.2.0-rc.2): the two",
+    "catalogs gained ctx.otel and ctx.productAnalytics and lost nothing — 0 service",
+    "removals, 0 event additions, 0 event removals — so every entry below still",
+    "cites a declared name on all four supported lines."
   ],
   "supportedDshFloor": "0.1.5-rc.2",
   "frameworkNote": "Cordis framework built-ins (cordis / cordis-plugin-loader), not harness surface.",
@@ -69,7 +74,7 @@
       "members": ["current", "names", "defaultPreset", "selectFor", "resolve", "optionOf", "set"]
     },
     "agentPresets": {
-      "declaredIn": "docs/capability-seams.md: ctx.agentPresets. Two owning packages across the supported lines, same service name: packages/preset/agent-presets through 0.1.6 (abstract class members in its lib/types/index.d.ts) and packages/preset/agent-preset-registry from 0.1.7 (declares `Context { agentPresets: AgentPresetRegistry }` in lib/types/index.d.ts). `resolveMountable`, `read`, `copy` and `remove` exist only on the 0.1.5/0.1.6 roster; the bridge calls `resolveMountable` only behind a member probe and never calls the other three. `defaultId` is declared as a getter on both (`get defaultId(): string` — 'the preset id mounted when a caller names none'/ 'Default preset for a subsequently created session'), and is read only to substitute for a configured preset this roster no longer has.",
+      "declaredIn": "docs/capability-seams.md: ctx.agentPresets. Two owning packages across the supported lines, same service name: packages/preset/agent-presets through 0.1.6 (abstract class members in its lib/types/index.d.ts) and packages/preset/agent-preset-registry from 0.1.7 — the same package and the same declaration on 0.2.0, whose registry types are byte-identical to 0.1.7-rc.2's (declares `Context { agentPresets: AgentPresetRegistry }` in lib/types/index.d.ts). `resolveMountable`, `read`, `copy` and `remove` exist only on the 0.1.5/0.1.6 roster; the bridge calls `resolveMountable` only behind a member probe and never calls the other three. `defaultId` is declared as a getter on both (`get defaultId(): string` — 'the preset id mounted when a caller names none'/ 'Default preset for a subsequently created session'), and is read only to substitute for a configured preset this roster no longer has.",
       "members": ["list", "resolve", "resolveMountable", "mount", "recompose", "composedPreset", "composeFrom", "read", "readDocument", "copy", "remove", "select", "serviceFor", "defaultId"]
     },
     "sessionPersistence": {

@@ -2,11 +2,17 @@
  * The dsh version comparison the launcher and the doctor share.
  *
  * Not a general semver implementation — it only has to order the version
- * strings this project deals with (`0.1.5-rc.2`, `0.1.6-alpha.2`, `0.1.1-rc.2`),
- * following semver's rules for those shapes: compare the numeric triple, then
- * the prerelease identifiers (numeric < alphanumeric, fewer fields < more), and
- * a release outranks the same triple's prerelease. Anything unparseable makes
- * every comparison `undefined`, so callers can fail open instead of guessing.
+ * strings this project deals with (`0.1.5-rc.2`, `0.1.6-alpha.2`, `0.2.0-rc.2`,
+ * `0.1.1-rc.2`), following semver's rules for those shapes: compare the numeric
+ * triple, then the prerelease identifiers (numeric < alphanumeric, fewer fields
+ * < more), and a release outranks the same triple's prerelease. Anything
+ * unparseable makes every comparison `undefined`, so callers can fail open
+ * instead of guessing.
+ *
+ * A range's ceiling is strict about its own prereleases (`<0.2.0-0`), matching
+ * the host's peer gate — see `caretBounds`. The repo-only guard
+ * `support-claim-test.mjs` (not shipped: it needs `semver`) holds both ends of
+ * that contract against npm's `semver`.
  *
  * Also usable as a command, which is how the bash launcher asks:
  *
@@ -75,7 +81,15 @@ function caretBounds(alternative) {
   // A caret's ceiling is the next *major*, except at 0.x — where it is the next
   // minor (and at 0.0.x the next patch). dsh is a 0.x CLI, so the distinction is
   // load-bearing: `^0.1.5` stops at 0.2.0, it does not run to 1.0.0.
-  const ceiling = major > 0 ? `${major + 1}.0.0` : minor > 0 ? `0.${minor + 1}.0` : `0.0.${patch + 1}`
+  //
+  // The `-0` suffix is what makes the ceiling strict about its own prereleases:
+  // semver expands `^0.1.7-alpha.1` to `>=0.1.7-alpha.1 <0.2.0-0`, so
+  // `0.2.0-rc.2` — a version *below* `0.2.0` numerically — is still outside.
+  // Without it this helper reported `0.2.0-rc.2` as supported while the host's
+  // own peer gate (`semver.satisfies` in `@deepseek-ai/dsh-app-boot`) rejected
+  // the bundle, and the profile silently dropped this bridge's whole patch
+  // layer. Keep the suffix: it is the difference between warning and silence.
+  const ceiling = `${major > 0 ? `${major + 1}.0.0` : minor > 0 ? `0.${minor + 1}.0` : `0.0.${patch + 1}`}-0`
   const floor = `${major}.${minor}.${patch}${match[4] === undefined ? '' : `-${match[4]}`}`
   return { floor, ceiling }
 }
@@ -84,11 +98,16 @@ function caretBounds(alternative) {
  *  a range's ceiling is the next minor on the 0.x line the bridge targets, so a
  *  CLI from a line this bridge was never verified against is *not* supported.
  *
- *  Deliberately not a semver implementation. Prerelease *gating* is looser than
- *  npm's (a prerelease above an alternative's floor counts as inside), which
- *  only ever makes the pre-boot warning quieter — never the other way, which is
- *  what matters here. Returns `undefined` when the version or the range cannot
- *  be read, so callers fail open. */
+ *  Deliberately not a semver implementation, but it must agree with one on the
+ *  boundary: the repo-only `support-claim-test.mjs` pins this helper against
+ *  npm's `semver.satisfies(…, { includePrerelease: true })` — the exact call the
+ *  host's peer gate makes — across every published line's edges, because the
+ *  two gates describe one claim and a disagreement is silent (this helper says
+ *  "supported", the host skips the bundle). Prerelease *gating* stays looser
+ *  than npm's at the floor (a prerelease above an alternative's floor counts as
+ *  inside), which only ever makes the pre-boot warning louder — never quieter,
+ *  which is what matters here. Returns `undefined` when the version or the range
+ *  cannot be read, so callers fail open. */
 export function isSupported(cliVersion, range) {
   if (parseVersion(cliVersion) === undefined) return undefined
   let understood = false

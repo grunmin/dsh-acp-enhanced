@@ -20,13 +20,19 @@ jobs:
       matrix:
         node-version: [22, 24]
         # Every line the peer range claims: the pin (0.1.5-rc.2), the 0.1.6 alpha
-        # line, and 0.1.7 — which repackaged the agent-preset roster, so this
-        # leg is the only coverage of the generation-gated row in
-        # cordis.patch.yml. Every job below boots a real profile, so a green run
-        # is boot-time verification of the support claim — the old matrix had no
-        # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
+        # line, 0.1.7 — which repackaged the agent-preset roster, so that leg is
+        # the only coverage of the generation-gated row in cordis.patch.yml —
+        # and 0.2.0, whose own change is *host-side*: dsh-app-boot's peer gate
+        # rejects any bundle whose declared ranges do not satisfy the running
+        # CLI, and on the boot path it does so by dropping that bundle's whole
+        # patch layer. Only a boot proves the range is wide enough. Every job
+        # below boots a real profile, so a green run is boot-time verification
+        # of the support claim — the old matrix had no dsh axis at all (it
+        # installed 0.1.0-rc.6 and never booted 0.1.6).
         # `.github/workflows/canary.yml` watches the line after these.
-        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-rc.2']
+        # `scripts/support-claim-test.mjs` fails if this list, the declared
+        # range and `scripts/compat-check.mjs`'s generations disagree.
+        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,9 +44,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/stored-titles.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/cancel-cause-test.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/stored-titles-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/stored-titles.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/cancel-cause-test.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/stored-titles-test.mjs && node --check scripts/support-claim-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
+      - name: Support claim (declared range ↔ matrix ↔ link generations)
+        # Boots nothing: it pins the manifest, the matrix and the helper against
+        # npm's own semver, the same call the host's peer gate makes. A green
+        # boot on a line the manifest does not claim (or vice versa) is exactly
+        # the failure that shipped a silent "skipping profile bundle".
+        run: node scripts/support-claim-test.mjs
       - name: Launcher contract (no implicit home switch)
         run: node scripts/acp-launcher-test.mjs
       - name: Codec unit tests (offline, deterministic)
