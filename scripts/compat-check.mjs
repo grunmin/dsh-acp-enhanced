@@ -129,8 +129,9 @@ const GENERATIONS = {
   // dsh-plugin-manager), which compares the running version against a bundle's
   // declared ranges with real semver. A range that stops at `^0.1.7-alpha.1`
   // does not contain `0.2.0-rc.2` — caret ceilings expand to `<0.2.0-0` — so the
-  // profile silently drops the bridge's whole patch layer. The pins below are
-  // exactly what @deepseek-ai/dsh@0.2.0-rc.2 declares.
+  // profile silently drops the bridge's whole patch layer. `@deepseek-ai/dsh`
+  // pins the CLI; the rest reproduce the closure it resolves (a few arrive
+  // transitively and are named here only because the link probe imports them).
   framesRegistry020: {
     label: '0.2.0+ (agent-preset registry API, 0.2 line)',
     roster: '@deepseek-ai/dsh-agent-preset-registry',

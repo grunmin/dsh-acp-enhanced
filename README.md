@@ -556,10 +556,13 @@ Five things were fixed, none of them in `lib/`:
   pinned closure `lib/` links against. That last check is what keeps a line-gated row package from
   creeping back into `peerDependencies`;
 - the **doctor and the launcher** report it. `acp-doctor.mjs` classifies a skipped bundle as
-  `LAYER manifest-gate` and its `FIX` splits *this bridge* from *a third party*; the launcher
-  translates the same stderr line to `dsh-acp-zed: MANIFEST-GATE …`, which matters because that
-  line is the only failure class that is not a stack trace — the boot continues without the bundle,
-  so nothing else in the log says anything is wrong.
+  `LAYER manifest-gate` when that is why the boot is down (a crash signature outranks it, and a
+  boot that still opened a thread reports `DEGRADED <n> inactive items` — a skipped bundle is a
+  missing capability, not automatically a dead profile), and its `FIX` splits *this bridge* from
+  *a third party*; the launcher translates the same stderr line to `dsh-acp-zed: MANIFEST-GATE …`
+  without spending its one fatal hint on it, which matters because that line is the only failure
+  class that is not a stack trace — the boot continues without the bundle, so nothing else in the
+  log says anything is wrong.
 
 Both gate paths are covered by the smoke and the CI matrix: the install path is what `dsh plugin
 add` exercises on all four lines, and `scripts/acp-smoke-keyless.mjs` asserts that a boot's stderr
@@ -573,10 +576,13 @@ The generation gate in `cordis.patch.yml` needed no new boundary: `minor > 1` al
 0.1.x-only peers, so a 0.2.0 profile skips them too until they widen their own ranges — this
 package cannot fix that. Measured on a profile built by the 0.1.6 CLI (bridge + `dsh-free-search@0.4.39`)
 and then booted by each line: on **0.1.7-rc.2** it is `RESULT READY`; on **0.2.0-rc.2** the skipped
-bundle answers `initialize` and then the profile never settles, so it is not a lost feature but a
-dead profile. `scripts/acp-doctor.mjs` reports exactly that (`BOOT FAILED after the handshake` →
-`LAYER manifest-gate`, naming the skipped bundle), and its fix distinguishes the two cases instead
-of telling you to upgrade this bridge when the skipped bundle is someone else's.
+bundle answers `initialize` and then the profile never settles, so for a bundle another row
+depends on it is not a lost feature but a dead profile. (A skipped bundle nothing else needs
+leaves a working profile — the boot just lost that bundle's capability, which `acp-doctor.mjs`
+reports as `DEGRADED`.) `scripts/acp-doctor.mjs` reports the fatal case as
+`BOOT FAILED after the handshake` → `LAYER manifest-gate`, naming the skipped bundle, and its fix
+distinguishes the two cases instead of telling you to upgrade this bridge when the skipped bundle
+is someone else's.
 
 ### Upgrading from a published ≤ 0.7.0
 
@@ -685,7 +691,7 @@ peer range and the closure version, then classifies the boot into one of four la
 
 | Layer | Signature in `dsh`'s stderr | What it means | Fix |
 |---|---|---|---|
-| **manifest-gate** | `skipping profile bundle "<name>": … peerDependencies {…}` | the CLI's peer gate rejected a bundle's declared `@deepseek-ai/dsh*` peers and dropped its whole patch layer before the loader ever saw it. When the name is `dsh-acp-enhanced` the bridge itself is gone; when it is a third-party bundle the profile answers `initialize` and then never settles | The doctor's `FIX` names the skipped bundle — upgrade the CLI inside *that* bundle's declared range, upgrade the bundle itself, or take it out of the profile. Upgrading this bridge cannot help when the skipped bundle is a third party's |
+| **manifest-gate** | `skipping profile bundle "<name>": … peerDependencies {…}` | the CLI's peer gate rejected a bundle's declared `@deepseek-ai/dsh*` peers and dropped its whole patch layer before the loader ever saw it. When the name is `dsh-acp-enhanced` the bridge itself is gone; when it is a third-party bundle another row depends on, the profile answers `initialize` and then never settles (with no dependant it just loses that capability, and the doctor reports `DEGRADED`) | The doctor's `FIX` names the skipped bundle — upgrade the CLI inside *that* bundle's declared range, upgrade the bundle itself, or take it out of the profile. Upgrading this bridge cannot help when the skipped bundle is a third party's |
 | **link-time** | `does not provide an export named …`, `SyntaxError: The requested module …` | the booting CLI's closure cannot satisfy an import this bridge performs | `node <pkg>/scripts/acp-doctor.mjs` — if it prints `LAYER link-time`, align the generation: restart every other dsh process under this home (the shared closure heals to whichever CLI booted last), or pin this launcher with `DSH_PATH=<matching dsh>` |
 | **mount-time** | `failed to apply loader entry …`, `… requires … in the Host scope`, `duplicate loader entry id: …` | the loader rejected one entry and rethrew, so the whole plugin tree is down | `node <pkg>/scripts/acp-doctor.mjs` prints `SUBJECT <entry> (<module>)` — install the missing module, disable that row (`- id: <entry>` + `disabled: true` in the user layer), or trim `dsh.profile.bundles` to `@deepseek-ai/dsh-base` + `dsh-acp-enhanced`. For a duplicate id, delete the row from your user layer (the bundle patch owns it) |
 | **run-time** | `… is not a function` after a successful handshake | the bridge reached a harness service this CLI generation does not provide | `npm install -g @deepseek-ai/dsh@<version in the supported range>` (see [Compatibility](#compatibility)) |
@@ -710,7 +716,7 @@ carries the layer and the fix.
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
 | `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
 | A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> inactive items` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
-| `dsh: skipping profile bundle "<name>": … peerDependencies {…}` — a whole bundle is gone after a dsh upgrade | that stderr line, the agent's stderr, or `acp-doctor.mjs` (a skipped bundle reports `LAYER manifest-gate`; a skipped third-party bundle also leaves the profile unable to settle) | The CLI's peer gate: from 0.1.7 `dsh-app-boot` checks each bundle's declared `@deepseek-ai/dsh*` peers against the running version and drops the bundle's entire patch layer when they do not match (the install path refuses it outright as `incompatible-version`). Only the bundle's publisher can widen the range — upgrade it (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`), or pin the CLI to a line that bundle declares. This bridge declares all four lines above; `dsh-free-search` and `dsh-mnemon` still declare 0.1.x only, and when one of *those* is the skipped bundle, upgrading this bridge cannot help |
+| `dsh: skipping profile bundle "<name>": … peerDependencies {…}` — a whole bundle is gone after a dsh upgrade | that stderr line, the agent's stderr, or `acp-doctor.mjs` (a skipped bundle reports `LAYER manifest-gate` when the boot is down, `DEGRADED` when it still works; a skipped third-party bundle another row depends on also leaves the profile unable to settle) | The CLI's peer gate: from 0.1.7 `dsh-app-boot` checks each bundle's declared `@deepseek-ai/dsh*` peers against the running version and drops the bundle's entire patch layer when they do not match (the install path refuses it outright as `incompatible-version`). Only the bundle's publisher can widen the range — upgrade it (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`), or pin the CLI to a line that bundle declares. This bridge declares all four lines above; `dsh-free-search` and `dsh-mnemon` still declare 0.1.x only, and when one of *those* is the skipped bundle, upgrading this bridge cannot help |
 | Session sidebar empty / slow to fill, bridge ≤ 0.9.0 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge to ≥ 0.9.1 — it answers in seconds and streams the remaining titles as `session_info_update` |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
 | A thread is dead after a Stop: `Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`, and a config switch in the same thread fails with `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1` — that thread's last `turn/end` carries `reason=null`, and loading it again fails the same way | Bridge ≤ 0.9.1 passed `new Error(...)` as the harness cancel cause, but `AgentCancelCause` is a closed union (`{kind:'user'\|'parent'\|'disposed'\|'hook'}`). The harness's own turn close-out then threw on `assertNever` and persisted `turn/end {reason: null}`; `dsh-notification` ≤ 0.1.4 folds that as `reason.kind`, so every projection read in that session (prompt, config switch, `session/load`) threw afterwards. The thread itself cannot be recovered — start a new one — and upgrading the bridge removes the cause (guarding `reason?.kind` in `dsh-notification` only stops the throw; the unreadable event stays in the log) |
@@ -722,6 +728,7 @@ carries the layer and the fix.
 pnpm install                          # install dev dependencies (repo-pinned CLI and test scripts)
 node scripts/compat-check.mjs         # link check across the supported lines (0.1.5-rc.2 / 0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 scratch installs)
 node scripts/support-claim-test.mjs   # the declared range, the CI matrix and the helper agree with npm semver (blocking CI step)
+node scripts/boot-classify-test.mjs   # a skipped bundle on a working boot is DEGRADED, not a failure; a crash outranks the skip (blocking CI step)
 node scripts/api-surface-check.mjs    # public-surface guard: no undeclared harness API (blocking CI step)
 node scripts/pack-check.mjs           # package integrity: entry points, modes, shipped-file references (blocking CI step)
 node scripts/acp-client.mjs           # end-to-end smoke (needs an API key)
