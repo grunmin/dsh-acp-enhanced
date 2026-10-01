@@ -60,7 +60,13 @@ check('the third-party subject names the bundle and the running dsh',
   String(dead?.subject))
 check('the third-party fix does not tell the user to upgrade this bridge',
   /This bridge is not the one being skipped/.test(dead?.fix ?? '')
-  && /when another row depends on the skipped bundle/.test(dead?.fix ?? ''),
+  && /whatever it gave the profile is gone/.test(dead?.fix ?? '')
+  && /take it out of the profile/.test(dead?.fix ?? ''),
+  JSON.stringify(dead?.fix?.slice(0, 80)))
+// The retracted claim (a skipped third-party bundle hangs the boot) must not
+// come back by wording: the substantiated loss is that bundle's capability.
+check('the third-party fix does not claim the boot hangs',
+  !/never settles|unable to settle|hangs/.test(dead?.fix ?? ''),
   JSON.stringify(dead?.fix?.slice(0, 80)))
 
 const self = diagnose(skipLine('dsh-acp-enhanced'), { ...OPTIONS, bootOk: false })
@@ -107,6 +113,13 @@ check('a skipped bundle and an inactive entry are reported together',
   JSON.stringify(both))
 check('a clean stderr yields no inactive items',
   inactiveEntries(['profile settled']).length === 0)
+const bounded = inactiveEntries([
+  'warning: 1 entry did not activate',
+  'tool-web (tool-web): cannot find package',
+  'unrelated (noise): 1 + 1 = 2',
+])
+check('the count caps the scan, so later lookalike lines are not reported',
+  bounded.length === 1 && /tool-web/.test(bounded[0]), JSON.stringify(bounded))
 const long = inactiveEntries([`prefix skipping profile bundle "${'x'.repeat(300)}"`])
 check('an over-long skip line is truncated', long[0].endsWith('…') && long[0].length === 241, String(long[0].length))
 

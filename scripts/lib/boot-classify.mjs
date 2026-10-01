@@ -20,8 +20,11 @@
  *     caller reports it as DEGRADED through `inactiveEntries`, which lists the
  *     skip lines independently of the loader's activation count;
  *   - when the boot failed with no crash signature, the skip is the failure: a
- *     self-skip takes the ACP server away (no handshake at all), and a skipped
- *     dependency leaves the profile unable to settle.
+ *     self-skip takes the ACP server away (no handshake at all). For a third
+ *     party's bundle that is not what happens — measured on a profile another
+ *     row depended on, the boot still answered `initialize`, opened a thread and
+ *     carried a prompt to the model call, so a third-party skip is a capability
+ *     loss and nothing more.
  *
  * Kept out of `acp-doctor.mjs` so `boot-classify-test.mjs` can pin the table
  * without booting anything (the doctor runs its boot at import time).
@@ -53,7 +56,7 @@ export function manifestGate(stderr, { profileName, supportedRange, bridgeVersio
   return {
     layer: 'manifest-gate',
     subject,
-    fix: `this CLI checked that bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped its whole patch layer. This bridge is not the one being skipped, so upgrading it will not help: upgrade \`${skipped}\` if a release declares this CLI line, take it out of the profile, or pin the CLI to a line that bundle declares. Do not leave it: when another row depends on the skipped bundle the profile answers \`initialize\` and then never settles (measured with \`dsh-free-search@0.4.39\` on 0.2.0-rc.2); even when the boot survives, that bundle's capability is gone.`,
+    fix: `this CLI checked that bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped its whole patch layer, so the rows it provided never mount and whatever it gave the profile is gone. This bridge is not the one being skipped, so upgrading it will not help: upgrade \`${skipped}\` if a release declares this CLI line, take it out of the profile, or pin the CLI to a line that bundle declares. The boot itself usually survives (measured on \`dsh-free-search@0.4.39\` on 0.2.0-rc.2, with and without a user row configuring its entry) — the loss is that bundle's capability, not the profile. If there is no release of it for this CLI line, upstream can take the risk explicitly: \`dsh plugin allow-version ${skipped}@<version> --dsh-version ${runtime ?? '<running version>'} --accept-risk --profile ${profileName}\` (measured to lift the skip; what it costs is the risk the warning names).`,
   }
 }
 
@@ -157,12 +160,19 @@ export function inactiveEntries(lines) {
     inactive.push(trimmed.length > 240 ? `${trimmed.slice(0, 240)}…` : trimmed)
   }
   if (count !== undefined) {
+    // The loader reports "N entries did not activate" and then one
+    // `<entry> (<module>): <reason>` line per entry. Cap the scan at that N: the
+    // shape is not unique to the loader, and an unbounded scan can pull any
+    // `foo (bar): baz` stderr line into the DEGRADED report.
+    const budget = Number(count)
+    let taken = 0
     for (const line of lines) {
+      if (taken >= budget) break
       const match = /^(\S+) \(([^)]+)\): (\S.*)$/.exec(line.trim())
-      if (match !== null) {
-        const reason = match[3]
-        inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
-      }
+      if (match === null) continue
+      const reason = match[3]
+      inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
+      taken += 1
     }
   }
   if (inactive.length > 0) return inactive
