@@ -20,9 +20,8 @@
 # What it creates (re-running is safe: existing files are never clobbered):
 #
 #   1. profile 'acp-enhanced' via `dsh plugin add` (bundles:
-#      @deepseek-ai/dsh-base + dsh-acp-enhanced — deliberately WITHOUT
-#      dsh-mnemon, which does not support the 0.1.2-alpha harness)
-#   2. bundle-set verification (the profile must never carry dsh-mnemon)
+#      @deepseek-ai/dsh-base + dsh-acp-enhanced — deliberately minimal)
+#   2. bundle-set verification (the required bundles must all be present)
 #   3. the user-layer cordis.patch.yml: your old profile's user rows ported
 #      verbatim (web-search routing and friends — machine-specific values
 #      never shipped with this repo), plus the DeepSeek plugin-inventory
@@ -104,8 +103,7 @@ else
 fi
 
 # 2. Verify the bundle set — reconcilePlugins has been observed re-adding
-# disabled plugins, and this profile must not carry dsh-mnemon (its
-# dsh-client-runtime import is gone in the 0.1.2-alpha harness).
+# disabled plugins, so confirm the required bundles are all still declared.
 BAD_BUNDLES="$(python3 -c "
 import json, sys
 p = json.load(open(sys.argv[1]))
@@ -115,16 +113,13 @@ problems = []
 missing = need - set(bundles)
 if missing:
     problems.append('MISSING:' + ','.join(sorted(missing)))
-forbidden = set(bundles) & {'dsh-mnemon'}
-if forbidden:
-    problems.append('FORBIDDEN:' + ','.join(sorted(forbidden)))
 print(' '.join(problems), end='')
 " "${PROFILE_DIR}/package.json")"
 if [ -n "${BAD_BUNDLES}" ]; then
   echo "init-acp-home: unexpected bundle set (${BAD_BUNDLES}); fix ${PROFILE_DIR}/package.json by hand" >&2
   exit 1
 fi
-echo "==> profile bundles verified (base + acp-enhanced, no dsh-mnemon)"
+echo "==> profile bundles verified (base + acp-enhanced)"
 
 # 2b. The profile is a single failure domain: the loader rethrows the first
 # rejected entry, so any extra bundle is a boot-wide risk. Report them instead

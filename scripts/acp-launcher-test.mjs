@@ -142,7 +142,7 @@ try {
   }
   // A skipped bundle is not a stack: it arrives first, and a *different* fatal
   // signature may follow. The skip hint must not consume the one fatal hint.
-  const skip = 'dsh: skipping profile bundle "dsh-free-search": Error: Plugin dsh-free-search@0.4.39 is incompatible with dsh 0.2.0-rc.2: peerDependencies {}'
+  const skip = 'dsh: skipping profile bundle "third-party-bundle": Error: Plugin third-party-bundle@1.2.3 is incompatible with dsh 0.2.0-rc.2: peerDependencies {}'
   const combined = run(home, { FAKE_DSH_FAIL: `${skip}\nError: failed to apply loader entry "tool-web"` })
   check('a skip line does not swallow a later fatal translation',
     /MANIFEST-GATE/.test(combined.stderr) && /MOUNT-TIME failure/.test(combined.stderr),

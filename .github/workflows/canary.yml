@@ -9,11 +9,12 @@ name: canary (next dsh line)
 # Current state (2026-09-30): `alpha` is 0.1.7-alpha.2 while `latest`/`next` are
 # 0.2.0-rc.2 — every one of them inside the supported range, so this job
 # re-verifies a supported line instead of warning about the next one. That is
-# still its own coverage (it drives the `dsh plugin add` install path, which the
-# boot matrix never does), and it becomes a real early warning again the moment
-# upstream publishes a line past the declared range under `alpha` — no change
-# needed here. `scripts/support-claim-test.mjs` keeps the declared range and the
-# CI matrix honest meanwhile.
+# still its own coverage: the boot matrix drives `dsh plugin add` and the smoke
+# only for the four *declared* lines, while this job runs the same paths
+# against whatever `alpha` currently points at, and it becomes a real early
+# warning again the moment upstream publishes a line past the declared range
+# under `alpha` — no change needed here. `scripts/support-claim-test.mjs` keeps
+# the declared range and the CI matrix honest meanwhile.
 #
 # Reading the result:
 #   green → the bridge still works on that line; widen the peer range when the

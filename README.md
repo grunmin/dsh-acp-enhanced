@@ -297,7 +297,7 @@ consequences worth knowing:
   **row id** (not the package name — find ids in the `--dump-config` output):
 
   ```yaml
-  - id: mnemon
+  - id: example-row
     disabled: true
   ```
 
@@ -507,9 +507,10 @@ rest of the titles arriving as they resolve. `DSH_ACP_LIST_BUDGET_MS` tunes the 
 
 Two things outside this package to check, both silent when wrong:
 
-- **`dsh-free-search`** must be **≥ 0.4.39**. Earlier releases import `SettingsProvider`,
-  which 0.1.7's `dsh-settings` replaced with `SettingsForms`; the entry fails to import, the
-  loader continues, and `web_search` is simply gone. `scripts/acp-doctor.mjs` now reports a
+- **every third-party bundle** must have a release built for the line. An older release may
+  import `SettingsProvider`, which 0.1.7's `dsh-settings` replaced with `SettingsForms`; the
+  entry fails to import, the loader continues, and that capability is simply gone.
+  `scripts/acp-doctor.mjs` now reports a
   degraded boot (`RESULT DEGRADED` with the entry names, exit 1) instead of `RESULT READY`.
 - **user-authored presets** in `$DSH_HOME/.agent-presets/` are no longer discovered — see
   [Your own presets](#your-own-presets) above.
@@ -543,7 +544,8 @@ Five things were fixed, none of them in `lib/`:
   after the range was widened. That rejection is about what is being *installed* (the added package
   and whatever its own rows and peers resolve to); a profile that merely still carries an
   incompatible third-party member draws a warning and stays installed, denied at startup until it
-  is upgraded, removed, or granted an exemption (measured; see the migration record's §5 row 23). The row itself stays (it is generation-gated off on every later
+  is upgraded, removed, or granted an exemption (measured; see the migration record
+  `docs/plans/2026-09-30-dsh-0.2.0-support.md`, §5 row 23). The row itself stays (it is generation-gated off on every later
   line) and still resolves from the running CLI's own closure — which is exactly how the sibling
   `@deepseek-ai/dsh-agent-preset-registry` row has worked since 0.9.1. Measured on the four lines:
   the legacy package resolves from the 0.1.5 and 0.1.6 installs and not from 0.1.7 or 0.2.0, which
@@ -577,13 +579,13 @@ The generation gate in `cordis.patch.yml` needed no new boundary: `minor > 1` al
 0.2.0 as a registry-roster line, and the four inlined preset declarations are byte-identical to
 `@deepseek-ai/dsh-web-app@0.2.0-rc.2`'s.
 
-**Third-party bundles gate themselves.** `dsh-free-search` and `dsh-mnemon` declare
-0.1.x-only peers, so a 0.2.0 profile skips them too until they widen their own ranges — this
+**Third-party bundles gate themselves.** A third-party bundle whose declared peers stop at
+0.1.x is skipped on a 0.2.0 profile until its publisher widens its own range — this
 package cannot fix that. What a skip costs is that bundle's capability, not the profile. On a profile built by
-the 0.1.6 CLI (bridge + `dsh-free-search@0.4.39`; `RESULT READY` on 0.1.7-rc.2) and booted by
+the 0.1.6 CLI (bridge + such a bundle; `RESULT READY` on 0.1.7-rc.2) and booted by
 0.2.0-rc.2, an independent ACP probe answered `initialize` in ~0.5 s, stayed alive, opened a
 `session/new` thread and carried a `session/prompt` as far as the model call — with an empty user
-layer **and** with a user row that configures the skipped bundle's entry (`- id: web-search-free`),
+layer **and** with a user row that configures the skipped bundle's entry,
 i.e. the shape the "another row depends on it" story needed. `scripts/acp-doctor.mjs` reports
 exactly that: `BOOT OK` + `DEGRADED <n> inactive items`. It prints `LAYER manifest-gate` only when
 the boot really is down for a skip, which for this bridge means the *self*-skip (no handshake at
@@ -619,9 +621,8 @@ Checklist:
    user layer? Delete the row: the bridge's patch ships it now, and a duplicate id aborts the
    boot. `scripts/init-acp-home.sh` retires it for you. The launcher warns, and the doctor
    names the id.
-5. Check that any third-party bundle in the profile supports the line you are moving to
-   (`dsh-free-search` ≥ 0.4.24 is verified for 0.1.5; on 0.1.7 it needs ≥ 0.4.39 — see
-   [Upgrading to 0.1.7](#upgrading-to-017)) — the profile is one failure domain.
+5. Check that every third-party bundle in the profile has a release for the line you are
+   moving to (see [Upgrading to 0.1.7](#upgrading-to-017)) — the profile is one failure domain.
 6. Restart Zed (or open a fresh agent thread); `node <pkg>/scripts/acp-doctor.mjs` verifies the
    whole path first, including opening a thread.
 
@@ -720,13 +721,13 @@ carries the layer and the fix.
 | `modelSelectionSettings requires … in the Host scope` | `dsh --profile acp-enhanced --dump-config \| grep subagent-model-selection` | The host row the `standard` preset needs is missing — the bridge's bundle patch inserts it, so reinstall/upgrade the bridge (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced`), and check that nothing in your user layer sets it `disabled: true` |
 | `duplicate loader entry id: <row>` | the doctor prints `LAYER mount-time` and the id | Two layers ship the same row. Delete it from the profile's user layer (`$DSH_HOME/profiles/acp-enhanced/cordis.patch.yml`) — these host rows belong to the bundle patch. `scripts/init-acp-home.sh` retires the legacy `subagent-model-selection-settings` copy for you |
 | Old threads start empty after a host upgrade | `ls $DSH_HOME/sessions` | The sessions live under `$DSH_HOME/sessions/<slug>/`; copy the old home's history in (`scripts/init-acp-home.sh --copy-sessions`) and the new host resumes them |
-| An old thread fails to open: `Internal error … dsh-session-format-v0-to-v1 refuses this format v0 Session: … source summary requires notice form … (raw log: <path>)` | the `raw log` path in the error | The dsh CLI's frozen v0→v1 migration refusing data that an older third-party bundle wrote into the session — every dsh client hits it, not only ACP through this bridge, and the migration never rewrites the original file. Known cases: `dsh-mnemon` ≤0.5.6 (injected `form` + `summary` messages) and `dsh-message-edit`'s `message-edit/version` events. `dsh-mnemon` ≥0.5.7 ships `bin/repair-legacy-session.mjs` (writes a repaired copy; the original stays); upgrading the writing bundle stops new sessions carrying the shape |
+| An old thread fails to open: `Internal error … dsh-session-format-v0-to-v1 refuses this format v0 Session: … source summary requires notice form … (raw log: <path>)` | the `raw log` path in the error | The dsh CLI's frozen v0→v1 migration refusing data that an older third-party bundle wrote into the session — every dsh client hits it, not only ACP through this bridge, and the migration never rewrites the original file. The writers of that era injected `form`/`summary` messages or `message-edit/version` events; a later release of the writing bundle typically ships a repair script (writes a repaired copy; the original stays). Upgrade the writing bundle so new sessions stop carrying the shape |
 | Cannot switch models | `ACP_DEBUG=1 dsh --profile acp-enhanced`, then try the switch | The carried `reasoning_effort` is unsupported on the target: the bridge remembers the last effort per model (per-profile JSON) and falls back to the model's default rather than failing the switch. Also check the route is real — phantom providers are filtered, only `config.provider`'s models are advertised |
 | Context usage missing | `/status` in the thread | A "phantom provider" route was picked; point the profile's provider at a real route |
 | Turn settles with usage but **no reply text** (empty panel) | `ACP_DEBUG=1` and look for `agent/assistant-stream frame=chunk` | From 0.9.0 the only live seam is the `agent/assistant-stream` frames event, with the committed `assistant/message` as the fallback whenever a step streamed nothing. Frames present but no text = a client-side render problem; no frames at all = the fallback path (upgrade the bridge if it is older) |
 | `Unknown agent preset: <id>` after a dsh upgrade | `ls $DSH_HOME/.agent-presets` and the profile's `cordis.patch.yml` | That preset left the roster — from 0.1.7 `$DSH_HOME/.agent-presets` is no longer scanned. Declare it as a `@deepseek-ai/dsh-agent-preset` row ([Your own presets](#your-own-presets)); 0.9.1 opens *blank* sessions under the roster default meanwhile (with a stderr note), but resuming a thread that already ran it keeps failing until the row exists |
-| A capability the profile used to have is silently gone (e.g. `web_search`) | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> inactive items` with the entry names | An entry that fails to import does not take the profile down, it just is not there. Upgrade that bundle for this dsh line — `dsh-free-search` needs ≥ 0.4.39 on 0.1.7, because 0.4.24 imports the `SettingsProvider` export `dsh-settings` dropped — or remove it |
-| `dsh: skipping profile bundle "<name>": … peerDependencies {…}` — a whole bundle is gone after a dsh upgrade | that stderr line, the agent's stderr, or `acp-doctor.mjs` (a skipped bundle reports `LAYER manifest-gate` when the boot is down for it — the self-skip — and `DEGRADED` when the boot still works; either way that bundle's capability is gone) | The CLI's peer gate: from 0.1.7 `dsh-app-boot` checks each bundle's declared `@deepseek-ai/dsh*` peers against the running version and drops the bundle's entire patch layer when they do not match (the install path refuses it outright as `incompatible-version`). Only the bundle's publisher can widen the range — upgrade it (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`), or pin the CLI to a line that bundle declares. This bridge declares all four lines above; `dsh-free-search` and `dsh-mnemon` still declare 0.1.x only, and when one of *those* is the skipped bundle, upgrading this bridge cannot help |
+| A capability the profile used to have is silently gone | `node <pkg>/scripts/acp-doctor.mjs` — a degraded boot prints `DEGRADED <n> inactive items` with the entry names | An entry that fails to import does not take the profile down, it just is not there. The bundle was built for another line: it imports an export this line removed (0.1.7 replaced `SettingsProvider` in `dsh-settings` with `SettingsForms`). Upgrade that bundle for this dsh line, or remove it |
+| `dsh: skipping profile bundle "<name>": … peerDependencies {…}` — a whole bundle is gone after a dsh upgrade | that stderr line, the agent's stderr, or `acp-doctor.mjs` (a skipped bundle reports `LAYER manifest-gate` when the boot is down for it — the self-skip — and `DEGRADED` when the boot still works; either way that bundle's capability is gone) | The CLI's peer gate: from 0.1.7 `dsh-app-boot` checks each bundle's declared `@deepseek-ai/dsh*` peers against the running version and drops the bundle's entire patch layer when they do not match (the install path refuses it outright as `incompatible-version`). Only the bundle's publisher can widen the range — upgrade it (`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`), or pin the CLI to a line that bundle declares. This bridge declares all four lines above; when the skipped bundle is a third party's, it is that bundle's range that stops short, and upgrading this bridge cannot help |
 | Session sidebar empty / slow to fill, bridge ≤ 0.9.0 on dsh 0.1.7 | `ls $DSH_HOME/sessions \| wc -l` and the agent's stderr for `timeout: session/list` | The pre-fix list decoded every stored log (see [What 0.1.7 changes about a large session store](#what-017-changes-about-a-large-session-store)); a few hundred sessions made it exceed the 30s wire timeout. Upgrade the bridge to ≥ 0.9.1 — it answers in seconds and streams the remaining titles as `session_info_update` |
 | Plugin edits seem ignored | the profile's `cordis.patch.yml` mtime | Changes apply to the **next** process: open a new agent thread (or restart Zed) |
 | A thread is dead after a Stop: `Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`, and a config switch in the same thread fails with `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1` — that thread's last `turn/end` carries `reason=null`, and loading it again fails the same way | Bridge ≤ 0.9.1 passed `new Error(...)` as the harness cancel cause, but `AgentCancelCause` is a closed union (`{kind:'user'\|'parent'\|'disposed'\|'hook'}`). The harness's own turn close-out then threw on `assertNever` and persisted `turn/end {reason: null}`; `dsh-notification` ≤ 0.1.4 folds that as `reason.kind`, so every projection read in that session (prompt, config switch, `session/load`) threw afterwards. The thread itself cannot be recovered — start a new one — and upgrading the bridge removes the cause (guarding `reason?.kind` in `dsh-notification` only stops the throw; the unreadable event stays in the log) |

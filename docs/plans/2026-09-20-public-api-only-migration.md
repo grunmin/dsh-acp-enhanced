@@ -176,7 +176,7 @@ Keep that path and its arguments working unchanged.
    + version, and the supported range.
 2. **stderr signature translation** in the launcher for the same three classes.
 3. **Minimise the ACP profile**: bundles = `dsh-base` + `dsh-acp-enhanced` only;
-   move third-party bundles (e.g. `dsh-free-search`) to **preset-scoped**
+   move third-party bundles to **preset-scoped**
    mounting. Failure domain then cannot mismatch, because `dsh-base` ships with
    the CLI. This is the structural answer to "a bad plugin in the profile kills
    ACP": `cordis-plugin-loader` `update()` rethrows any rejected entry
@@ -354,7 +354,7 @@ points:
    and an executable `spawn-helper` (all `ensure-spawn-helper.mjs` does is
    `chmod 0755`), plus koffi's `@koromix/koffi-darwin-arm64/koffi.node`.
 2. **The live profile relinked to this checkout**:
-   `dsh plugin --profile acp-enhanced add link:/Users/runmin/dev/dsh-acp-enhanced`
+   `dsh plugin --profile acp-enhanced add link:<repo>`
    → `node_modules/dsh-acp-enhanced` is now a symlink to the repo (bridge 0.9.0
    instead of the 0.7.0 tarball), so the running bridge is the working tree.
 3. **The required host row added to the profile's user layer** — first as a
@@ -363,16 +363,16 @@ points:
    last item; the temporary hand-edit is not part of the final state.
    `~/.dsh/profiles/acp-enhanced/cordis.patch.yml` now carries only the local
    `acp-enhanced` override plus a note explaining why the host row is absent.
-4. **`dsh-free-search` kept at 0.4.24** — the maintainer's rule was "delete it if
+4. **a third-party bundle kept at its then-current release** — the maintainer's rule was "delete it if
    it is incompatible", and it is not: a scratch profile with
-   `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` + `dsh-free-search` boots clean
-   under 0.1.5-rc.2 with both 0.4.24 and the latest 0.4.32, mounts
-   `web-search-free`, and patches the host `web` row to `searchProvider: ddg`
+   `@deepseek-ai/dsh-base` + `dsh-acp-enhanced` + a third-party bundle boots clean
+   under 0.1.5-rc.2 at both the pinned and the then-latest release, mounts
+   its search entry, and patches the host `web` row to `searchProvider: ddg`
    (`dsh --profile … --dump-config`). It stays a boot-path bundle, so the profile
    is deliberately not minimal (the doctor flags it).
 5. **Zed pointed at the repo launcher**:
    `~/.config/zed/settings.json` → `agent_servers."dsh-acp-enhanced".args` is now
-   `/Users/runmin/dev/dsh-acp-enhanced/scripts/dsh-acp-zed.sh` (backup:
+   `<repo>/scripts/dsh-acp-zed.sh` (backup:
    `settings.json.bak-20260919-154923`). The `env` block (provider/model/proxy)
    is untouched.
 
@@ -380,7 +380,7 @@ Verification on the real home (not a scratch one):
 
 | Check | Result |
 | --- | --- |
-| `node scripts/acp-doctor.mjs` | `READY` — bridge 0.9.0, base 0.1.5-rc.2, free-search 0.4.24, closure healed to `@deepseek-ai/dsh-agent 0.1.5-rc.2` |
+| `node scripts/acp-doctor.mjs` | `READY` — bridge 0.9.0, base 0.1.5-rc.2, a third-party bundle at its then-current release, closure healed to `@deepseek-ai/dsh-agent 0.1.5-rc.2` |
 | live `initialize` through the launcher | `deepseek-harness-acp-enhanced 0.9.0` |
 | live `session/new` (standard preset) | OK — modes + `permission_preset` (danger-full-access) + `agent_preset` = `standard` (options: standard, ptc, minimal, cordis, router-standard) |
 | live `session/list` | 481 real sessions read through the 0.1.5 handle API, 198 with titles — the persistence rewrite holds over the existing archive |
@@ -420,7 +420,7 @@ launcher; the published 0.7.0 tarball fetched with `npm pack`):
 | **Both together, profile booted from a checkout / `DSH_PATH`** | the old launcher had moved the profile to `~/.dsh-acp`; the new one resolves `~/.dsh`, so it exits 127 (`profile not found`) | the missing-profile branch now detects `~/.dsh-acp/profiles/<name>` and prints the exact `DSH_HOME=<home>` fix |
 | **Both together, stock npm install** | works; verified doctor READY, `session/new` OK, 481 archived sessions listed through the 0.1.5 handle API | — |
 | **`session/delete`** | clients lose the capability (Zed stops offering it); persisted files stay under `$DSH_HOME/sessions` | documented; upstream issue still open |
-| **Third-party bundles** | any bundle that cannot load on 0.1.5 kills the whole profile (single failure domain). `dsh-free-search` 0.4.24 and 0.4.32 verified good | doctor names the entry; README's "Keep the profile minimal" |
+| **Third-party bundles** | any bundle that cannot load on 0.1.5 kills the whole profile (single failure domain). A third-party bundle at two releases of that era verified good | doctor names the entry; README's "Keep the profile minimal" |
 
 Two extra checks were added in the same breath:
 
@@ -463,10 +463,10 @@ shipped official packages, and published third-party plugins.
 
 Both published plugins checked declare long OR-chains that are already stale:
 
-- `dsh-free-search@0.4.32`: `^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2 || ^0.1.3-alpha.2 || ^0.1.5-alpha.1`
+- a third-party bundle of that era: `^0.1.0-rc.7 || ^0.1.1-rc.2 || ^0.1.2-alpha.2 || ^0.1.3-alpha.2 || ^0.1.5-alpha.1`
   — it lists neither `0.1.5-rc.2` nor `0.1.6-alpha.2`, yet boots, mounts and configures
   `web.searchProvider` on both (§12).
-- `dsh-mnemon@0.5.11`: skips the 0.1.3/0.1.4 lines entirely, stops at `0.1.5-rc.1`.
+- another third-party bundle of that era: skips the 0.1.3/0.1.4 lines entirely, stops at `0.1.5-rc.1`.
 
 So the community norm is a best-effort OR-chain plus runtime tolerance, with declared
 ranges that are neither enforced nor reliable — the pattern P2 deliberately deleted here.
@@ -507,4 +507,4 @@ ranges that are neither enforced nor reliable — the pattern P2 deliberately de
 | bridge 0.9.0 on dsh **0.1.6-alpha.2** (scratch home, real CLI) | doctor `READY` — handshake, settle and a real `session/new` that opened a thread |
 | keyless smoke on 0.1.6-alpha.2 | ALL CHECKS PASSED (same job the widened matrix runs) |
 | MCP mount smoke on 0.1.6-alpha.2 | ALL CHECKS PASSED |
-| `dsh-free-search@0.4.32` peers vs. reality | declared range excludes both lines we support; it mounts and configures `web.searchProvider` on them anyway |
+| a third-party bundle's peers vs. reality | declared range excludes both lines we support; it mounts and configures `web.searchProvider` on them anyway |
