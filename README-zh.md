@@ -103,8 +103,8 @@ ACP 线上。
 
 ## 快速开始
 
-**需要 `dsh ≥ 0.1.5-rc.2`**（`npm install -g @deepseek-ai/dsh@0.2.0-rc.2`，或下方 peer 范围内的
-任意版本）：本桥在每条受支持线（0.1.5-rc.2 直到 0.2.0）上只消费同一套已声明表面，不在运行期
+**需要 `dsh ≥ 0.1.6-alpha.1`**（`npm install -g @deepseek-ai/dsh@0.2.0-rc.2`，或下方 peer 范围内的
+任意版本）：本桥在每条受支持线（0.1.6-alpha.1 直到 0.2.0）上只消费同一套已声明表面，不在运行期
 探测更老的代际。
 
 本包遵循 dsh 官方插件规范（声明了 `dsh.bundle`），安装与官方组合包一致：**一条命令**
@@ -154,6 +154,20 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
 > 某个特定模式就设置它。API key 不必写进 Zed：存入 `~/.dsh/.credentials.yaml`
 > （`DEEPSEEK_API_KEY`）由 dsh 凭据服务解析即可；启动脚本还会兜底继承正在运行的
 > `dsh web` 进程的 key。
+
+排查「卡住的轮次」（是模型请求卡住，还是工具卡住）：
+
+```jsonc
+"env": {
+  // ...上面的其它变量...
+  "ACP_LOG": "/Users/you/.dsh/dsh-acp-enhanced.trace.jsonl"  // 追加写 JSONL 事件 trace
+}
+```
+
+每行是一个会话事件，带墙钟 `time`（ms epoch）；看上去「挂住」的轮次事后可归因：
+**模型请求卡住**表现为 `step/start` 与首个 `assistant/chunk` 之间出现长间隔，**工具执行卡住**
+则表现为 `tool/call` 与 `tool/result` 之间长间隔（result 行带 `elapsedMs`）。
+`prompt/settled` 行覆盖整条用户消息往返（stopReason + 耗时）。
 
 可选：固定面板默认项（都可随时在面板里改）：
 
@@ -280,7 +294,7 @@ profile 是一个**单一故障域**：`cordis-plugin-loader` 会等待每个条
 
 - **只新增模型侧工具/命令的插件** → 把行写进某个 preset composition。**0.1.7 线**上是
   profile 用户层里的一条 `@deepseek-ai/dsh-agent-preset` 行（见「自建 preset」）；
-  0.1.5/0.1.6 上是 `$DSH_HOME/.agent-presets/<id>/` 目录（组合写 `agent.cordis.yml`，
+  0.1.6 线上是 `$DSH_HOME/.agent-presets/<id>/` 目录（组合写 `agent.cordis.yml`，
   选择器里的名称写 `preset.yml`）。两种方式下 ACP 的 `agent_preset` 下拉都会列出它；
   组合加载失败的 preset 只会被标记为 broken 并从列表里剔除，不会拖垮进程。
 - **需要配置宿主服务的插件**（例如要覆写宿主 `web` 行 `searchProvider` 的搜索 provider）
@@ -296,8 +310,8 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 
 ## 兼容性
 
-同一个桥只对应**一套已声明的 harness 表面**：**dsh ≥ 0.1.5-rc.2**（peer 范围
-`^0.1.5-rc.2 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2`）。该范围内的**四条线**每次 CI
+同一个桥只对应**一套已声明的 harness 表面**：**dsh ≥ 0.1.6-alpha.1**（peer 范围
+`^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2`）。该范围内的**三条线**每次 CI
 都会做真实启动验证——握手、profile settle 与真实 `session/new`——另有跨代链接检查，以及
 `scripts/support-claim-test.mjs` 这个把本节声明与 npm 自己的 semver 对齐的守卫。桥只消费 harness
 **已声明**的表面：`docs/capability-seams.md` 里的服务、`docs/event-producer-consumer.md` 里的
@@ -320,7 +334,7 @@ bundle 声明的 `@deepseek-ai/dsh*` peer 与正在运行的 CLI 版本逐一核
 
 | 桥版本 | 支持的 dsh 线 | 变化 |
 |---|---|---|
-| **0.10.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2` | 支持 0.2.0：`lib/` 一行都不用改，但声明的范围比宿主的 peer 门禁少了一条线——在 0.2.0 CLI 上，门禁已经丢掉整层 patch，而桥自己的 helper 还认为它受支持。≤ 0.1.6 的名册包也不再声明为 peer：安装路径会检查**每一行 patch 的 `name`** 解析出的包，所以一个被代际门控关掉的行也会让 0.2.0 上的 `dsh plugin add` 直接失败。现在 helper 与 npm 的上界语义一致（`<0.2.0-0`），并新增一个守卫，让范围、CI 矩阵与链接检查代际三者始终一致 |
+| **0.10.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2` | 支持 0.2.0，同时**下限上移到 0.1.6-alpha.1**（放弃 0.1.5-rc.2：它的启动冒烟在 GitHub runner 上从未通过，未经验证的线不能留在声明里）：`lib/` 一行都不用改，但声明的范围比宿主的 peer 门禁少了一条线——在 0.2.0 CLI 上，门禁已经丢掉整层 patch，而桥自己的 helper 还认为它受支持。≤ 0.1.6 的名册包也不再声明为 peer：安装路径会检查**每一行 patch 的 `name`** 解析出的包，所以一个被代际门控关掉的行也会让 0.2.0 上的 `dsh plugin add` 直接失败。现在 helper 与 npm 的上界语义一致（`<0.2.0-0`），并新增一个守卫，让范围、CI 矩阵与链接检查代际三者始终一致 |
 | **0.9.1** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1` | 支持 0.1.7：agent-preset roster 上游换包，桥同时下发两种形状（代际门控行），并把四个 preset 声明内联进来 |
 | **0.9.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | 只消费已声明表面；下限 0.1.5-rc.2；移除 `session/delete` |
 | 0.8.x | `^0.1.0-rc.6 … ^0.1.6-alpha.1`（未发布） | 0.1.3+ 实时 seam；0.1.5 持久化 handle API |
@@ -365,7 +379,7 @@ standard/ptc/minimal/cordis 组合打进去、并作为只读 `system` root 前�
 
 门控读的是**正在启动的这套安装自身的身份**：打开 `profileContext.installAnchor`（即运行中 CLI
 自己的 `package.json`），用它的 `version` 决定形状（registry roster 从 0.1.x 线的 0.1.7 开始）。
-0.1.5 上根本没有 `profileContext`，这本身就已经是「≤ 0.1.6」的答案；任何读不到、解析不了、
+更老的线上根本没有 `profileContext`（`≤ 0.1.6`），这本身就是答案；任何读不到、解析不了、
 归类不了的情况都保留旧行。`!!js` 表达式以 `with (ctx)` 在 loader context 加全局上求值，因此版本
 只能「读」而不能「问」——作用域里没有任何东西暴露它。
 
@@ -439,7 +453,7 @@ loader 要挂载的数据：
 ### 0.10.0 的变更（增量：支持 dsh 0.2.0）
 
 `dsh` 0.2.0（RC 线，尚无 stable）是一次 **客户端/UI 版本**。本桥 import 的一切除版本号外都没变：
-它静态 import 的十个 harness 包与 0.1.7-rc.2 的差异只在 `package.json`，`@deepseek-ai/dsh-session`
+它链接的 harness 包与 0.1.7-rc.2 的差异只在 `package.json`（逐包审计覆盖十个包），`@deepseek-ai/dsh-session`
 多了一个导出（`ToolCallRecovery`，上游修「工具调度失败后会话无法继续」），两份生成目录新增
 `ctx.otel` 与 `ctx.productAnalytics`，**没有任何删除**——0 个服务、0 个事件消失。
 
@@ -464,8 +478,8 @@ loader 要挂载的数据：
   留在安装里，但在启动时被拒（升级它、移除它，或授予精确版本豁免——实测见迁移记录
   `docs/plans/2026-09-30-dsh-0.2.0-support.md` §5 row 23）。行本身保留（在后续各代由代际门控设为
   `disabled`），它仍然从运行中 CLI 自己的安装闭包里解析——这正是自 0.9.1 起兄弟行
-  `@deepseek-ai/dsh-agent-preset-registry` 一直用的机制。四条线实测：旧名册包能从 0.1.5 与 0.1.6 的
-  安装里解析到，从 0.1.7 与 0.2.0 解析不到，所以 0.1.5/0.1.6 上日志仍是*旧名册*的
+  `@deepseek-ai/dsh-agent-preset-registry` 一直用的机制。各线实测：旧名册包能从 0.1.6 的
+  安装里解析到，从 0.1.7 与 0.2.0 解析不到，所以 0.1.6 上日志仍是*旧名册*的
   `preset "…" not found`，0.1.7/0.2.0 上则是注册表的 `Unknown agent preset`；
 - `scripts/lib/dsh-version.mjs` 现在把 caret 上界展开成 `<x.y.0-0`，与
   `semver.satisfies(…, { includePrerelease: true })` 一致，因此上界版本自身的预发布版
@@ -485,7 +499,8 @@ loader 要挂载的数据：
 `scripts/acp-smoke-keyless.mjs` 断言启动 stderr 里**没有** `skipping profile bundle` 行。
 
 `cordis.patch.yml` 的代际门控不需要新边界：`minor > 1` 已把 0.2.0 归为注册表名册线，四条内联的
-preset 声明与 `@deepseek-ai/dsh-web-app@0.2.0-rc.2` 的逐字节相同。
+preset 声明与 `@deepseek-ai/dsh-web-app@0.2.0-rc.2` 的 `config` 子树相同（声明行本身另带本桥的
+`disabled` 代际门控与展示元数据）。
 
 **第三方 bundle 只能自己放宽门控。** 声明只含 0.1.x 的第三方 bundle 会在 0.2.0 profile 上被跳过，
 直到它的发布者自己放宽范围——本包修不了这个。被跳过的代价是**那条 bundle 的能力**，不是 profile。实测：用 0.1.6 CLI 建出的一个 profile
@@ -502,7 +517,7 @@ preset 声明与 `@deepseek-ai/dsh-web-app@0.2.0-rc.2` 的逐字节相同。
 
 ### 从已发布的 ≤ 0.7.0 升级
 
-npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥和 CLI **必须一起动**——只升一半，
+0.1.3 之前的 API 线止于 **0.7.0**，它的桥和 CLI **必须一起动**——只升一半，
 两种顺序都会坏：
 
 | 顺序 | 结果 |
@@ -513,7 +528,7 @@ npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥�
 
 升级清单：
 
-1. `npm install -g @deepseek-ai/dsh@0.1.5-rc.2`（或上面 peer 范围内的任意版本）。
+1. `npm install -g @deepseek-ai/dsh@0.2.0-rc.2`（或上面 peer 范围内的任意版本）。
 2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`。升级桥是显式动作：profile 里的依赖
    是对 0.x 的 caret，所以 `dsh plugin update` **不会**自行把你带到新的 minor。
 3. 以前是从检出目录启动、或设过 `DSH_PATH`？旧启动器会自行切到 `~/.dsh-acp`，现在不会了。请在 Zed 的
@@ -532,7 +547,7 @@ npm 上的 `latest` 是 **0.7.0**，属于 0.1.3 之前的 API 线，因此桥�
 `$DSH_HOME/profiles/node_modules` 是同 home 下所有 profile 共享的**同一个**依赖闭包，
 dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
 
-> 这是 **0.1.5 线**的行为。到 0.1.6-alpha.2 及之后，这个共享闭包已完全不存在（harness 从 CLI
+> 这是**旧线**的行为。到 0.1.6-alpha.2 及之后，这个共享闭包已完全不存在（harness 从 CLI
 > 自身的安装位置解析；profile 的 `node_modules` 只放外部插件），所以启动器的漂移检查是「按线」
 > 的，路径消失时会静默跳过。
 
@@ -548,7 +563,7 @@ dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
 当前解析结果随时可查：
 
 ```sh
-node scripts/compat-check.mjs        # 仅限仓库检出：分别安装 0.1.5-rc.2、0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2 四套，逐一导入本桥
+node scripts/compat-check.mjs        # 仅限仓库检出：分别安装 0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2 三套，逐一导入本桥
 node <pkg>/scripts/acp-doctor.mjs   # CLI 与闭包版本、bundle 列表，并真实启动一次（随包发布）
 ```
 
@@ -608,7 +623,7 @@ manifest-gate 那行是唯一不是堆栈的一类：boot 会继续跑、只是�
 | Zed 卡死无输出、线程始终不应答 | `node <pkg>/scripts/acp-doctor.mjs` | 会打印 `BOOT FAILED` 与 `LAYER`/`SUBJECT`/`FIX`，照 `FIX` 做即可。先应答 `initialize` 再立刻退出的 profile 也会被如实报出 |
 | `exec: dsh: not found`（status 127） | `which dsh` | 用随附 `dsh-acp-zed.sh` 启动器（自定位 node/dsh），或安装 CLI |
 | `no API key for provider route "xxx"` | `ls -l $DSH_HOME/.credentials.yaml` | 写入 `~/.dsh/.credentials.yaml`，或在 agent_servers 里设 `env.DEEPSEEK_API_KEY` |
-| `SyntaxError: … 'PresetMountError'` | agent 日志里的桥版本 | 你在 0.1.5 宿主上跑 0.9.0 之前的桥副本——升级本包 |
+| `SyntaxError: … 'PresetMountError'` | agent 日志里的桥版本 | 你在 ≤ 0.1.6 宿主上跑 0.9.0 之前的桥副本——升级本包 |
 | `modelSelectionSettings requires … in the Host scope` | `dsh --profile acp-enhanced --dump-config \| grep subagent-model-selection` | `standard` preset 需要的宿主行缺失——该行由 bridge 的 bundle patch 提供，请重装/升级 bridge（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced`），并检查用户层没有把它 `disabled: true` |
 | `duplicate loader entry id: <行>` | doctor 会打印 `LAYER mount-time` 与该 id | 两层都插了同一行。请从 profile 用户层（`$DSH_HOME/profiles/acp-enhanced/cordis.patch.yml`）删掉它——这类宿主行归 bundle patch 所有；`scripts/init-acp-home.sh` 会自动清掉遗留的 `subagent-model-selection-settings` 副本 |
 | 宿主升级后旧线程变空白 | `ls $DSH_HOME/sessions` | 会话存放在 `$DSH_HOME/sessions/<slug>/`；把旧 home 的历史拷进来（`scripts/init-acp-home.sh --copy-sessions`）即可继续 |
@@ -618,17 +633,17 @@ manifest-gate 那行是唯一不是堆栈的一类：boot 会继续跑、只是�
 | 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
 | 升级 dsh 后报 `Unknown agent preset: <id>` | `ls $DSH_HOME/.agent-presets` 与 profile 的 `cordis.patch.yml` | 该 preset 已不在名册里——0.1.7 起不再扫描 `$DSH_HOME/.agent-presets`。把它改成一条 `@deepseek-ai/dsh-agent-preset` 声明行（见「自建 preset」）；0.9.1 下*空*会话会先用名册默认值打开（stderr 有说明），但恢复已跑过它的线程在补上行之前仍然失败 |
 | profile 以前有的能力静默消失 | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> inactive items` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。该 bundle 是为另一条线构建的：它 import 了本线已删除的导出（0.1.7 用 `SettingsForms` 替换了 `dsh-settings` 里的 `SettingsProvider`）。给这条 dsh 线升级该 bundle，或直接移除它 |
-| 升级 dsh 后出现 `dsh: skipping profile bundle "<名称>": … peerDependencies {…}`——整个 bundle 没了 | 那行 stderr、agent 的 stderr，或 `acp-doctor.mjs`（boot 因此挂掉时报 `LAYER manifest-gate`——也就是自跳过——仍能用则报 `DEGRADED`；两种情况都意味着那条 bundle 的能力没了） | CLI 的 peer 门禁：从 0.1.7 起 `dsh-app-boot` 会把每个 bundle 声明的 `@deepseek-ai/dsh*` peer 与运行版本核对，不匹配就丢掉它的整层 patch（安装路径更会直接以 `incompatible-version` 拒绝）。只有该 bundle 的发布者能放宽范围——升级它（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`），或把 CLI 固定到该 bundle 声明的线上。本桥声明了上面四条线；被跳过的是第三方 bundle 时，是*它*的范围止步于旧线，升级本桥没有用 |
+| 升级 dsh 后出现 `dsh: skipping profile bundle "<名称>": … peerDependencies {…}`——整个 bundle 没了 | 那行 stderr、agent 的 stderr，或 `acp-doctor.mjs`（boot 因此挂掉时报 `LAYER manifest-gate`——也就是自跳过——仍能用则报 `DEGRADED`；两种情况都意味着那条 bundle 的能力没了） | CLI 的 peer 门禁：从 0.1.7 起 `dsh-app-boot` 会把每个 bundle 声明的 `@deepseek-ai/dsh*` peer 与运行版本核对，不匹配就丢掉它的整层 patch（安装路径更会直接以 `incompatible-version` 拒绝）。只有该 bundle 的发布者能放宽范围——升级它（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`），或把 CLI 固定到该 bundle 声明的线上。本桥声明了上面三条线；被跳过的是第三方 bundle 时，是*它*的范围止步于旧线，升级本桥没有用 |
 | 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.0 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对『会话库很大』意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥到 ≥ 0.9.1——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
-| Stop 之后线程直接死掉：`Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`，同一线程里改配置项也报 `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1`——该线程最后一条 `turn/end` 的 `reason=null`，再次加载它也一样失败 | 桥 ≤ 0.9.1 把 `new Error(...)` 当作 harness 的取消原因，而 `AgentCancelCause` 是封闭联合（`{kind:'user'\|'parent'\|'disposed'\|'hook'}`）。harness 自己的轮次收尾因此撞上 `assertNever` 抛错，落盘 `turn/end {reason: null}`；`dsh-notification` ≤ 0.1.4 按 `reason.kind` 折叠它，于是该会话之后每次 projection 读取（prompt、改配置、`session/load`）都抛错。该线程本身无法恢复——新开一个；升级桥即可消除根因（在 `dsh-notification` 里用 `reason?.kind` 只是不再抛错，坏事件仍留在日志里） |
+| Stop 之后线程直接死掉：`Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`，同一线程里改配置项也报 `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1`——该线程最后一条 `turn/end` 的 `reason=null`，再次加载它也一样失败 | 桥 ≤ 0.9.1 把 `new Error(...)` 当作 harness 的取消原因，而 `AgentCancelCause` 是封闭联合（`{kind:'user'\|'parent'\|'disposed'\|'hook'}`）。harness 自己的轮次收尾因此撞上 `assertNever` 抛错，落盘 `turn/end {reason: null}`；按 `reason.kind` 折叠它的会话 projection 会直接抛错，于是该会话之后每次 projection 读取（prompt、改配置、`session/load`）都失败。该线程本身无法恢复——新开一个；升级桥即可消除根因（下游用 `reason?.kind` 只是不再抛错，坏事件仍留在日志里） |
 | 需要详细诊断 | — | `ACP_DEBUG=1`（stderr 生命周期 trace）与 `ACP_LOG=/tmp/acp.jsonl`（逐事件 JSONL，带耗时） |
 
 ## 开发
 
 ```sh
 pnpm install                          # 安装开发依赖（仓库锁定 CLI 与测试脚本）
-node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.5-rc.2 / 0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 四套临时安装）
+node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 三套临时安装）
 node scripts/support-claim-test.mjs   # 声明范围、CI 矩阵与 helper 和 npm semver 一致（CI 阻塞步骤）
 node scripts/boot-classify-test.mjs   # 仍可用的 boot 上被跳过只是 DEGRADED 而非失败；崩溃签名优先于跳过行（CI 阻塞步骤）
 node scripts/api-surface-check.mjs    # 公开表面守卫：不得使用未声明的 harness API（CI 阻塞步骤）

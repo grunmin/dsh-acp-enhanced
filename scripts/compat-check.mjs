@@ -44,36 +44,15 @@ const bridgeDeps = {
 
 // The supported API generations, all on the `agent/assistant-stream` frames
 // line (0.1.3-alpha.2+) and all consuming the same declared service surface:
-// "frames" is the pinned rc line, "framesNext" the 0.1.6 alpha line,
-// "framesRegistry" the 0.1.7 line that replaced the preset roster, and
-// "framesRegistry020" the 0.2.0 line, which kept that roster and moved only the
-// host's peer gate. Each mirrors the repo devDependency ranges (the same ranges
-// the pinned @deepseek-ai/dsh CLI declares), so a fresh resolution matches what
-// a real profile boot heals. `roster` names the agent-preset package that line
-// ships, which the row the bridge's bundle patch inserts must also match.
+// "framesNext" is the 0.1.6 alpha line — the oldest line the peer range claims
+// since 0.10.0 dropped 0.1.5-rc.2 — "framesRegistry" the 0.1.7 line that
+// replaced the preset roster, and "framesRegistry020" the 0.2.0 line, which
+// kept that roster and moved only the host's peer gate. Each mirrors the repo
+// devDependency ranges (the same ranges the pinned @deepseek-ai/dsh CLI
+// declares), so a fresh resolution matches what a real profile boot heals.
+// `roster` names the agent-preset package that line ships, which the row the
+// bridge's bundle patch inserts must also match.
 const GENERATIONS = {
-  frames: {
-    label: '0.1.3-alpha.2+ (assistant-stream frames API, rc line)',
-    roster: '@deepseek-ai/dsh-agent-presets',
-    deps: {
-      '@deepseek-ai/cordis': '^4.0.2',
-      '@deepseek-ai/cordis-plugin-include': '^1.0.7',
-      '@deepseek-ai/cordis-plugin-loader': '^1.0.3',
-      '@deepseek-ai/dsh': '0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent-instructions': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-agent-presets': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-invariants': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-llm': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-mcp-client': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-permission-presets': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-session': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-session-query': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-skill': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-tools': '^0.1.5-rc.2',
-      '@deepseek-ai/dsh-user-approval': '^0.1.5-rc.2',
-    },
-  },
   framesNext: {
     label: '0.1.3-alpha.2+ (assistant-stream frames API, alpha line)',
     roster: '@deepseek-ai/dsh-agent-presets',

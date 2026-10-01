@@ -28,7 +28,7 @@ const OPTIONS = {
   profileDir: '/home/u/.dsh/profiles/acp-enhanced',
   dshHome: '/home/u/.dsh',
   repoDir: '/pkg/dsh-acp-enhanced',
-  supportedRange: '^0.1.5-rc.2 || ^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2',
+  supportedRange: '^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2',
   profileName: 'acp-enhanced',
   cliPath: '/pkg/dsh-acp-enhanced/node_modules/.bin/dsh',
   cliVersion: '0.2.0-rc.2',

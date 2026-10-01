@@ -10,7 +10,7 @@ name: canary (next dsh line)
 # 0.2.0-rc.2 — every one of them inside the supported range, so this job
 # re-verifies a supported line instead of warning about the next one. That is
 # still its own coverage: the boot matrix drives `dsh plugin add` and the smoke
-# only for the four *declared* lines, while this job runs the same paths
+# only for the three *declared* lines, while this job runs the same paths
 # against whatever `alpha` currently points at, and it becomes a real early
 # warning again the moment upstream publishes a line past the declared range
 # under `alpha` — no change needed here. `scripts/support-claim-test.mjs` keeps

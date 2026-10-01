@@ -24,9 +24,12 @@
     "Audited on 2026-09-30 against the 0.2.0 line (dsh-v0.2.0-rc.2): the two",
     "catalogs gained ctx.otel and ctx.productAnalytics and lost nothing — 0 service",
     "removals, 0 event additions, 0 event removals — so every entry below still",
-    "cites a declared name on all four supported lines."
+    "cites a declared name on every supported line. `supportedDshFloor` tracks the",
+    "peer range's floor (0.1.6-alpha.1 since 0.10.0 dropped 0.1.5-rc.2); the two",
+    "entries below still citing 0.1.5-rc.2 record where that member was read, not a",
+    "supported line."
   ],
-  "supportedDshFloor": "0.1.5-rc.2",
+  "supportedDshFloor": "0.1.6-alpha.1",
   "frameworkNote": "Cordis framework built-ins (cordis / cordis-plugin-loader), not harness surface.",
   "framework": [
     "get", "on", "waterfall", "serial", "bail", "emit", "logger", "effect",

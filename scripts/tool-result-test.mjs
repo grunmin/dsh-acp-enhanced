@@ -5,7 +5,8 @@
  *
  * Both folds exist because `ToolResultMessage` moved across the supported dsh
  * lines: 0.1.7 carries the call id on the message and its text blocks flat,
- * while 0.1.5 nests both under the first `tool-result` content block. Reading
+ * while the legacy line (≤ 0.1.6) nests both under the first `tool-result`
+ * content block. Reading
  * only one shape sent a `tool_call_update` with no `toolCallId` (the editor
  * could not match it, so the card stuck at "running") and an empty body (no
  * output). These folds take the raw event data / content array, which is the
@@ -26,8 +27,8 @@ check('0.1.7 message-level toolCallId is read',
   toolResultCallId({
     message: { role: 'tool', toolCallId: 'call_07', content: [{ type: 'text', text: 'x' }] },
   }) === 'call_07')
-// 0.1.5 live shape: no message-level id, id nested on the tool-result block.
-check('0.1.5 nested block toolCallId is read',
+// Legacy live shape: no message-level id, id nested on the tool-result block.
+check('nested block toolCallId is read (legacy line)',
   toolResultCallId({
     message: { content: [{ type: 'tool-result', toolCallId: 'call_05', content: [] }] },
   }) === 'call_05')
@@ -50,7 +51,7 @@ check('empty message → undefined', toolResultCallId({ message: {} }) === undef
 
 check('flat text blocks join with a newline (0.1.7)',
   toolResultText([{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }]) === 'a\nb')
-check('nested tool-result blocks join with a newline (0.1.5)',
+check('nested tool-result blocks join with a newline (legacy line)',
   toolResultText([
     { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'a' }] },
     { type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'b' }] },

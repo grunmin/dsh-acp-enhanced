@@ -19,20 +19,20 @@ jobs:
       fail-fast: false
       matrix:
         node-version: [22, 24]
-        # Every line the peer range claims: the pin (0.1.5-rc.2), the 0.1.6 alpha
-        # line, 0.1.7 — which repackaged the agent-preset roster, so that leg is
-        # the only coverage of the generation-gated row in cordis.patch.yml —
-        # and 0.2.0, whose own change is *host-side*: dsh-app-boot's peer gate
-        # rejects any bundle whose declared ranges do not satisfy the running
-        # CLI, and on the boot path it does so by dropping that bundle's whole
-        # patch layer. Only a boot proves the range is wide enough. Every job
-        # below boots a real profile, so a green run is boot-time verification
-        # of the support claim — the old matrix had no dsh axis at all (it
-        # installed 0.1.0-rc.6 and never booted 0.1.6).
+        # Every line the peer range claims: 0.1.6 alpha (the oldest line since
+        # 0.10.0 dropped 0.1.5-rc.2), 0.1.7 — which repackaged the agent-preset
+        # roster, so that leg is the only coverage of the generation-gated row in
+        # cordis.patch.yml — and 0.2.0, whose own change is *host-side*:
+        # dsh-app-boot's peer gate rejects any bundle whose declared ranges do
+        # not satisfy the running CLI, and on the boot path it does so by
+        # dropping that bundle's whole patch layer. Only a boot proves the range
+        # is wide enough. Every job below boots a real profile, so a green run is
+        # boot-time verification of the support claim — the old matrix had no
+        # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
         # `.github/workflows/canary.yml` watches the line after these.
         # `scripts/support-claim-test.mjs` fails if this list, the declared
         # range and `scripts/compat-check.mjs`'s generations disagree.
-        dsh-version: ['0.1.5-rc.2', '0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
+        dsh-version: ['0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

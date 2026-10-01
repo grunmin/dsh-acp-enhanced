@@ -2,7 +2,7 @@
  * The dsh version comparison the launcher and the doctor share.
  *
  * Not a general semver implementation — it only has to order the version
- * strings this project deals with (`0.1.5-rc.2`, `0.1.6-alpha.2`, `0.2.0-rc.2`,
+ * strings this project deals with (`0.1.6-alpha.2`, `0.1.7-rc.2`, `0.2.0-rc.2`,
  * `0.1.1-rc.2`), following semver's rules for those shapes: compare the numeric
  * triple, then the prerelease identifiers (numeric < alphanumeric, fewer fields
  * < more), and a release outranks the same triple's prerelease. Anything
@@ -16,12 +16,12 @@
  *
  * Also usable as a command, which is how the bash launcher asks:
  *
- *   node dsh-version.mjs --supported '^0.1.5-rc.2 || ^0.1.6-alpha.1' 0.1.5-rc.2
+ *   node dsh-version.mjs --supported '^0.1.6-alpha.1 || ^0.1.7-alpha.1' 0.1.6-alpha.2
  *   → exit 0 supported, 1 outside the range, 2 unparseable
  */
 import { pathToFileURL } from 'node:url'
 
-/** `0.1.5-rc.2` → `{ numbers: [0,1,5], prerelease: ['rc','2'] }`, else undefined. */
+/** `0.1.6-alpha.2` → `{ numbers: [0,1,6], prerelease: ['alpha','2'] }`, else undefined. */
 export function parseVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(value ?? '').trim())
   if (match === null) return undefined

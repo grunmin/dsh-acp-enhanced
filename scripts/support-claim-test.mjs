@@ -65,14 +65,16 @@ const compatVersions = [...compatSource.matchAll(/'@deepseek-ai\/dsh':\s*'([^']+
 check('the canonical range is declared', typeof range === 'string' && range.length > 0, String(range))
 check('the CI matrix names at least one version', ciVersions.length > 0, ciVersions.join(', '))
 
-// Every peer must be part of the pinned devDependency closure — the set of
-// packages this bundle actually links against. A peer that no `lib/` file
-// imports is not a dependency of the bundle but of a *profile row*, and rows are
-// resolved from the running CLI's own closure at boot. Declaring such a package
-// as a peer is how `@deepseek-ai/dsh-agent-presets` (no release past 0.1.6) got
-// force-installed into every 0.2.0 profile: from 0.1.7 the install path
-// evaluates each patch row's resolved package with the same gate and rejects the
-// entire installation (`incompatible-version`) when one of them disagrees.
+// Every peer must be part of the pinned devDependency closure — every declared
+// range has to stay resolvable in the closure the pinned CLI installs. The rule
+// is exactly peer ⊆ devDependency, not "peer ⊆ what lib/ imports": a peer that
+// no `lib/` file imports can still be a legitimate declaration. What it must not
+// be is a package that only a *profile row* needs, which is resolved from the
+// running CLI's own closure at boot. Declaring such a package as a peer is how
+// `@deepseek-ai/dsh-agent-presets` (no release past 0.1.6) got force-installed
+// into every 0.2.0 profile: from 0.1.7 the install path evaluates each patch
+// row's resolved package with the same gate and rejects the entire installation
+// (`incompatible-version`) when one of them disagrees.
 const strays = Object.keys(peers).filter((name) => (manifest.devDependencies ?? {})[name] === undefined)
 check('every declared peer is a devDependency of the pinned line', strays.length === 0, strays.join(', '))
 

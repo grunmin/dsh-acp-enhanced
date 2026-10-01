@@ -89,13 +89,13 @@ check('stripShellPrefix("git status") → "git status" (no shell prefix)',
 check('stripShellPrefix(undefined) → ""', stripShellPrefix(undefined) === '')
 
 // ── resultText: full text, undefined on error, both dsh content shapes ─────
-// dsh 0.1.5 nests the text under a `tool-result` block; 0.1.7 flattens it to a
+// the legacy line (≤ 0.1.6) nests the text under a `tool-result` block; 0.1.7 flattens it to a
 // top-level text block. A shape-only read returned '' on the other line, which
 // blanked every terminal card body.
 
 {
   const event = textEvent('line1\nline2')
-  check('resultText joins nested text blocks (0.1.5 shape)', resultText(event) === 'line1\nline2')
+  check('resultText joins nested text blocks (legacy shape)', resultText(event) === 'line1\nline2')
 }
 {
   const flat = { data: { message: { content: [{ type: 'text', text: 'line1\nline2' }] } } }
