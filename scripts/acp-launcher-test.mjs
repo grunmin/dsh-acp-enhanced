@@ -147,6 +147,12 @@ try {
   check('a skip line does not swallow a later fatal translation',
     /MANIFEST-GATE/.test(combined.stderr) && /MOUNT-TIME failure/.test(combined.stderr),
     JSON.stringify(combined.stderr.trim()))
+  // …and the reverse order: the skip goes to `gated`, not to `hinted`, so a
+  // fatal signature that already spent the fatal hint still leaves room for it.
+  const reversed = run(home, { FAKE_DSH_FAIL: `Error: failed to apply loader entry "tool-web"\n${skip}` })
+  check('a fatal line does not swallow a later skip translation',
+    /MANIFEST-GATE/.test(reversed.stderr) && /MOUNT-TIME failure/.test(reversed.stderr),
+    JSON.stringify(reversed.stderr.trim()))
 
   // 7. Range check: a CLI on either side of the declared range must be named
   //    instead of meeting a loader error that names an internal row (below the

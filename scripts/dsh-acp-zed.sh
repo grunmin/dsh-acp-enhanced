@@ -196,14 +196,13 @@ translate_boot_stderr() {
   local hinted=0 gated=0 line pkg
   while IFS= read -r line; do
     printf '%s\n' "${line}" >&2
-    [ "${hinted}" = 1 ] && continue
+    # The peer gate is the one failure that is *not* a stack: dsh drops the
+    # bundle's whole patch layer and keeps going, so this stderr line is all the
+    # user ever sees. It is free-standing: translated once (`gated`), it neither
+    # spends nor is spent by the single fatal-hint slot, so it is still named
+    # when a fatal signature came first, and a fatal signature after it still
+    # gets its own translation.
     case "${line}" in
-      # The peer gate is the one failure that is *not* a stack: dsh drops the
-      # bundle's whole patch layer and keeps going, so this stderr line is all
-      # the user ever sees. It arrives before any loader output, and one bundle
-      # may be skipped while a *different* fatal signature follows — so this
-      # hint is free-standing (`gated`, not `hinted`) and never swallows that
-      # fatal translation.
       *"skipping profile bundle"*)
         [ "${gated}" = 1 ] && continue
         pkg="$(printf '%s' "${line}" | sed -n 's/.*skipping profile bundle "\([^"]*\)".*/\1/p')"
@@ -214,7 +213,11 @@ translate_boot_stderr() {
           printf '  That is not this bridge: upgrade or remove %s, or pin the CLI to a line it declares. Upgrading this bridge cannot widen a third-party range.\n' "${pkg:-it}" >&2
         fi
         gated=1
+        continue
         ;;
+    esac
+    [ "${hinted}" = 1 ] && continue
+    case "${line}" in
       *"does not provide an export named"*)
         pkg="$(printf '%s' "${line}" | sed -n "s/.*module '\([^']*\)'.*/\1/p")"
         printf 'dsh-acp-zed: LINK-TIME failure: %s does not export what this bridge imports from it under %s.\n' "${pkg:-a harness bundle}" "${DASH_BIN}" >&2
