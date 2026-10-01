@@ -126,6 +126,12 @@ try {
       expect: /RUN-TIME failure/,
       detail: new RegExp(declaredRange.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     },
+    {
+      label: 'manifest-gate',
+      signature: 'dsh: skipping profile bundle "dsh-acp-enhanced": Error: Plugin dsh-acp-enhanced@0.10.0 is incompatible with dsh 0.2.0-rc.2: peerDependencies {}',
+      expect: /MANIFEST-GATE/,
+      detail: /dsh: skipping profile bundle/,
+    },
   ]
   for (const testCase of cases) {
     const failedBoot = run(home, { FAKE_DSH_FAIL: testCase.signature })
@@ -134,24 +140,40 @@ try {
       JSON.stringify(failedBoot.stderr.trim()))
     check(`${testCase.label} translation never reaches stdout`, failedBoot.stdout === '', JSON.stringify(failedBoot.stdout))
   }
+  // A skipped bundle is not a stack: it arrives first, and a *different* fatal
+  // signature may follow. The skip hint must not consume the one fatal hint.
+  const skip = 'dsh: skipping profile bundle "dsh-free-search": Error: Plugin dsh-free-search@0.4.39 is incompatible with dsh 0.2.0-rc.2: peerDependencies {}'
+  const combined = run(home, { FAKE_DSH_FAIL: `${skip}\nError: failed to apply loader entry "tool-web"` })
+  check('a skip line does not swallow a later fatal translation',
+    /MANIFEST-GATE/.test(combined.stderr) && /MOUNT-TIME failure/.test(combined.stderr),
+    JSON.stringify(combined.stderr.trim()))
 
-  // 7. Supported-floor check: a user who upgrades the bridge but not the CLI
-  //    must be told, instead of meeting a loader error that names an internal
-  //    row. It warns, never blocks, and an unreadable version is ignored.
+  // 7. Range check: a CLI on either side of the declared range must be named
+  //    instead of meeting a loader error that names an internal row (below the
+  //    floor) or a silent host-side bundle drop (above the ceiling). It warns,
+  //    never blocks, and an unreadable version is ignored.
   const oldCli = run(home, { FAKE_DSH_VERSION: '0.1.1-rc.2' })
   check('a CLI below the supported range warns on stderr',
-    /below the range this bridge supports/.test(oldCli.stderr) && oldCli.stderr.includes(declaredRange),
+    /outside the range this bridge supports/.test(oldCli.stderr) && oldCli.stderr.includes(declaredRange),
     JSON.stringify(oldCli.stderr.trim().split('\n')[0] ?? ''))
   check('the too-old warning does not block the boot',
     oldCli.status === 0 && /home=/.test(oldCli.stdout),
     `status=${oldCli.status} stdout=${JSON.stringify(oldCli.stdout.trim().slice(0, 60))}`)
   check('the too-old warning never reaches stdout',
-    !/below the range/.test(oldCli.stdout), JSON.stringify(oldCli.stdout.trim().slice(0, 60)))
+    !/outside the range/.test(oldCli.stdout), JSON.stringify(oldCli.stdout.trim().slice(0, 60)))
+  const tooNewCli = run(home, { FAKE_DSH_VERSION: '0.3.0-rc.1' })
+  check('a CLI above the supported range warns on stderr',
+    /outside the range this bridge supports/.test(tooNewCli.stderr) && tooNewCli.stderr.includes(declaredRange)
+    && /above the ceiling/.test(tooNewCli.stderr),
+    JSON.stringify(tooNewCli.stderr.trim().split('\n')[0] ?? ''))
+  check('the too-new warning does not block the boot',
+    tooNewCli.status === 0 && /home=/.test(tooNewCli.stdout),
+    `status=${tooNewCli.status} stdout=${JSON.stringify(tooNewCli.stdout.trim().slice(0, 60))}`)
   const newCli = run(home, { FAKE_DSH_VERSION: '0.1.5-rc.2' })
-  check('a supported CLI is not warned about', !/below the range/.test(newCli.stderr), JSON.stringify(newCli.stderr.trim()))
+  check('a supported CLI is not warned about', !/outside the range/.test(newCli.stderr), JSON.stringify(newCli.stderr.trim()))
   const oddCli = run(home, { FAKE_DSH_VERSION: 'weird' })
   check('an unreadable CLI version is ignored, not warned about',
-    oddCli.status === 0 && !/below the range/.test(oddCli.stderr),
+    oddCli.status === 0 && !/outside the range/.test(oddCli.stderr),
     `status=${oddCli.status} stderr=${JSON.stringify(oddCli.stderr.trim())}`)
 
   // 8. Migration footgun: a user layer that still seeds a row the bundle patch

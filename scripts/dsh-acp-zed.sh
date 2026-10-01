@@ -148,20 +148,21 @@ fi
 SUPPORTED_RANGE="$(sed -n 's/.*"@deepseek-ai\/dsh-agent"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${REPO_DIR}/package.json" | head -n 1)"
 CLI_VERSION="$("${DASH_BIN}" --version 2>/dev/null | head -n 1 | tr -d '[:space:]')"
 
-# Supported-floor check, before the boot. This bridge targets ONE declared
-# harness API line, so a CLI below it dies partway through the profile load with
-# a loader error naming an internal row (`… subpath './model-selection-settings'
-# is not defined by "exports"`) instead of the real cause — which reads like a
-# bridge bug and sends people debugging the wrong thing. Say it up front. A
-# version the comparator cannot read (exit 2) is ignored rather than warned
-# about.
+# Range check, before the boot. This bridge targets ONE declared harness API
+# line, and the two sides fail differently: a CLI *below* the floor dies partway
+# through the profile load with a loader error naming an internal row (`… subpath
+# './model-selection-settings' is not defined by "exports"`) instead of the real
+# cause, while a CLI *above* the ceiling is dropped whole and silently by the
+# host's peer gate (from 0.1.7). Neither reads like a version mistake, so name
+# the range up front. A version the comparator cannot read (exit 2) is ignored
+# rather than warned about.
 VERSION_HELPER="${REPO_DIR}/scripts/lib/dsh-version.mjs"
 if [ -n "${CLI_VERSION}" ] && [ -n "${SUPPORTED_RANGE}" ] && [ -f "${VERSION_HELPER}" ]; then
   "${NODE_BIN}" "${VERSION_HELPER}" --supported "${SUPPORTED_RANGE}" "${CLI_VERSION}" >/dev/null 2>&1
   VERSION_STATUS=$?
   if [ "${VERSION_STATUS}" = 1 ]; then
-    echo "dsh-acp-zed: warning: the booting CLI is ${CLI_VERSION} (${DASH_BIN}), below the range this bridge supports: ${SUPPORTED_RANGE}." >&2
-    echo "  ACP will fail while the profile loads. Fix: npm install -g @deepseek-ai/dsh@<version in that range>, or point DSH_PATH at a supported CLI." >&2
+    echo "dsh-acp-zed: warning: the booting CLI is ${CLI_VERSION} (${DASH_BIN}), outside the range this bridge supports: ${SUPPORTED_RANGE}." >&2
+    echo "  Below the floor the profile dies while loading; above the ceiling the host's peer gate drops this bridge's patch layer. Fix: npm install -g @deepseek-ai/dsh@<version in that range>, or point DSH_PATH at a supported CLI." >&2
   fi
 fi
 
@@ -192,15 +193,19 @@ fi
 # (Defined as a function because bash 3.2 cannot parse `case … ;;` directly
 # inside a process substitution.)
 translate_boot_stderr() {
-  local hinted=0 line pkg
+  local hinted=0 gated=0 line pkg
   while IFS= read -r line; do
     printf '%s\n' "${line}" >&2
     [ "${hinted}" = 1 ] && continue
     case "${line}" in
       # The peer gate is the one failure that is *not* a stack: dsh drops the
       # bundle's whole patch layer and keeps going, so this stderr line is all
-      # the user ever sees. It arrives before any loader output.
+      # the user ever sees. It arrives before any loader output, and one bundle
+      # may be skipped while a *different* fatal signature follows — so this
+      # hint is free-standing (`gated`, not `hinted`) and never swallows that
+      # fatal translation.
       *"skipping profile bundle"*)
+        [ "${gated}" = 1 ] && continue
         pkg="$(printf '%s' "${line}" | sed -n 's/.*skipping profile bundle "\([^"]*\)".*/\1/p')"
         printf 'dsh-acp-zed: MANIFEST-GATE: this dsh checked the declared @deepseek-ai/dsh* peers of %s, rejected them and dropped that bundle whole.\n' "${pkg:-a profile bundle}" >&2
         if [ "${pkg:-}" = "dsh-acp-enhanced" ]; then
@@ -208,7 +213,7 @@ translate_boot_stderr() {
         else
           printf '  That is not this bridge: upgrade or remove %s, or pin the CLI to a line it declares. Upgrading this bridge cannot widen a third-party range.\n' "${pkg:-it}" >&2
         fi
-        hinted=1
+        gated=1
         ;;
       *"does not provide an export named"*)
         pkg="$(printf '%s' "${line}" | sed -n "s/.*module '\([^']*\)'.*/\1/p")"
