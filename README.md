@@ -540,7 +540,10 @@ Five things were fixed, none of them in `lib/`:
   profile — and the *install* path checks more than the manifest: `bundleComponentManifests`
   resolves every row `name` in the bundle's patches and runs the same gate on each resolved
   package, so that unused 0.1.6 package made the installation fail with `incompatible-version` even
-  after the range was widened. The row itself stays (it is generation-gated off on every later
+  after the range was widened. That rejection is about what is being *installed* (the added package
+  and whatever its own rows and peers resolve to); a profile that merely still carries an
+  incompatible third-party member draws a warning and stays installed, denied at startup until it
+  is upgraded, removed, or granted an exemption (measured; see the migration record's §5 row 23). The row itself stays (it is generation-gated off on every later
   line) and still resolves from the running CLI's own closure — which is exactly how the sibling
   `@deepseek-ai/dsh-agent-preset-registry` row has worked since 0.9.1. Measured on the four lines:
   the legacy package resolves from the 0.1.5 and 0.1.6 installs and not from 0.1.7 or 0.2.0, which
