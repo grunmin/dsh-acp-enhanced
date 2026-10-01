@@ -1,19 +1,25 @@
 #!/usr/bin/env node
 /**
- * dsh-acp-enhanced doctor — one boot, three failure layers, one fix.
+ * dsh-acp-enhanced doctor — one boot, four failure layers, one fix.
  *
  * The ACP bridge is a dsh *bundle*: it is linked (ESM), mounted (cordis loader)
  * and only then exercised (ACP `initialize`). Each layer fails differently and
- * dsh reports all three as raw node/loader stacks, so this script boots the
+ * dsh reports most of them as raw node/loader stacks, so this script boots the
  * profile exactly as Zed does — through the shipped launcher, so the CLI
  * resolution is the real one — and classifies the failure:
  *
- *   link-time   the booting CLI's closure cannot satisfy an import
- *               (`does not provide an export named …`)
- *   mount-time  the loader rejected one entry and rethrew, taking the whole
- *               profile down (one bundle is a single failure domain)
- *   run-time    the handshake reached the bridge, which then called a harness
- *               method that does not exist on this CLI generation
+ *   manifest-gate  the CLI's own peer gate rejected a bundle's declared
+ *                  `@deepseek-ai/dsh*` peers and dropped its whole patch layer
+ *                  (`skipping profile bundle …`). This one is not a stack: the
+ *                  boot continues, so it is a failure layer only when the boot
+ *                  has no crash signature to explain it; on a boot that still
+ *                  opened a thread it is reported as DEGRADED instead.
+ *   link-time      the booting CLI's closure cannot satisfy an import
+ *                  (`does not provide an export named …`)
+ *   mount-time     the loader rejected one entry and rethrew, taking the whole
+ *                  profile down (one bundle is a single failure domain)
+ *   run-time       the handshake reached the bridge, which then called a harness
+ *                  method that does not exist on this CLI generation
  *
  * It always prints the environment (CLI, home, profile, every bundle + version,
  * the supported peer range) and, on failure, the offending bundle plus the exact
@@ -29,6 +35,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { diagnose, inactiveEntries } from './lib/boot-classify.mjs'
 import { compareVersions, floorOfRange, isSupported } from './lib/dsh-version.mjs'
 
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -65,7 +72,6 @@ const bridgeVersion = bridgeManifest?.version
 const supportedRange = bridgeManifest?.peerDependencies?.['@deepseek-ai/dsh-agent'] ?? '(undeclared)'
 /** The name the host prints for this bridge in a skipped-bundle line. */
 const bridgeName = bridgeManifest?.name ?? 'dsh-acp-enhanced'
-const isSelfBundle = (name) => name === bridgeName
 /** The range's floor: below it the CLI is too old, at or above it (yet outside
  *  the range) the CLI is from a line this bridge has not been verified against. */
 const supportedFloor = floorOfRange(supportedRange)
@@ -127,95 +133,6 @@ if (bundles.some((name) => !MINIMAL_BUNDLES.includes(name))) {
   console.log(`                 bundle kills ACP. Move it into a preset composition instead.`)
 }
 
-/** Classify one boot failure from the stderr the launcher collected.
- *
- *  Order matters: a mount failure *wraps* its cause, so `failed to apply loader
- *  entry …: Cannot find package …` carries both signatures. The unambiguous
- *  link-time signature (a missing named export) wins; otherwise a loader
- *  rejection is mount-time; a bare unresolved import is the bridge's own graph.
- */
-function classify(stderr) {
-  const firstOf = (pattern) => stderr.match(pattern)?.[1]
-  // The CLI's own peer gate outranks every other signature: it is not a loader
-  // failure at all, the boot continues without that bundle's patch layer, and
-  // the fix is a version relationship rather than a row to edit.
-  const skipped = firstOf(/skipping profile bundle "([^"]+)"/)
-  if (skipped !== undefined) {
-    const runtime = firstOf(/is incompatible with dsh ([^\s:]+)/)
-    const subject = `profile bundle ${skipped} rejected by the CLI's peer gate${runtime === undefined ? '' : ` (dsh ${runtime})`}`
-    if (isSelfBundle(skipped)) {
-      return {
-        layer: 'manifest-gate',
-        subject,
-        fix: `this CLI checked the bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped this bridge's whole patch layer — so the capability is silently gone. Upgrade the bridge (\`dsh plugin --profile ${profileName} add dsh-acp-enhanced@${bridgeVersion ?? '?'}\`) or pin the CLI to a line the bridge declares: ${supportedRange}, e.g. npm install -g @deepseek-ai/dsh@<version in that range>.`,
-      }
-    }
-    return {
-      layer: 'manifest-gate',
-      subject,
-      fix: `this CLI checked that bundle's declared @deepseek-ai/dsh* peers, did not accept the running version, and dropped its whole patch layer. This bridge is not the one being skipped, so upgrading it will not help: upgrade \`${skipped}\` if a release declares this CLI line, take it out of the profile, or pin the CLI to a line that bundle declares. Do not leave it: measured on 0.2.0-rc.2, a profile whose third-party bundle is skipped answers \`initialize\` and then never settles.`,
-    }
-  }
-  // A duplicate loader entry id outranks everything else: it is a composition
-  // conflict (the same row shipped by two layers), not a generation problem,
-  // and its fix is a specific line to delete.
-  const duplicate = firstOf(/duplicate loader entry id: *([^\s,)]+)/)
-  if (duplicate !== undefined) {
-    return {
-      layer: 'mount-time',
-      subject: `duplicate loader entry id: ${duplicate}`,
-      fix: `two layers ship the row "${duplicate}". If it is a host row the bridge's bundle patch provides (e.g. subagent-model-selection-settings), delete it from the user layer — ${join(profileDir, 'cordis.patch.yml')} — or re-run ${repoDir}/scripts/init-acp-home.sh, which retires the legacy copy.`,
-    }
-  }
-  if (/does not provide an export named|SyntaxError: The requested module/.test(stderr)) {
-    const moduleName = firstOf(/module '([^']+)'/)
-    return {
-      layer: 'link-time',
-      subject: moduleName ?? 'a harness bundle',
-      fix: `the closure was healed to a different CLI generation. Restart the other dsh processes under ${dshHome}, or pin this launcher to the matching CLI with DSH_PATH (resolved: ${cli.path ?? 'none'}, supported: ${supportedRange}).`,
-    }
-  }
-  if (/in the Host scope/.test(stderr)) {
-    const missing = firstOf(/`?(\w+)`? requires [^\s]+ in the Host scope/)
-    return {
-      layer: 'mount-time',
-      subject: `host-scope service missing (${missing ?? 'unnamed'})`,
-      fix: `a preset needs a host row this composition does not mount. If the profile's bridge is older than this checkout, upgrade it (\`dsh plugin --profile ${profileName} add dsh-acp-enhanced\`); otherwise the CLI is older than the bridge (supported: ${supportedRange}) — the two must move together.`,
-    }
-  }
-  if (/failed to apply loader entry|failed to import loader entry|requires .* to be available|cannot resolve plugin/.test(stderr)) {
-    // The outermost rejection wraps the real one, so read the innermost entry.
-    const entry = firstOf(/failed to import loader entry "?([^"\s(]+)"?/)
-      ?? firstOf(/failed to apply loader entry "?([^"\s(]+)"?/)
-      ?? firstOf(/entry "([^"]+)"/)
-      ?? firstOf(/requires "([^"]+)"/)
-      ?? firstOf(/\[plugin: ([^\]]+)\]/)
-    const moduleName = firstOf(/failed to import loader entry [^(]*\(([^)]+)\)/)
-      ?? firstOf(/Cannot find package '([^']+)'/)
-    return {
-      layer: 'mount-time',
-      subject: moduleName === undefined ? (entry ?? 'one loader entry') : `${entry ?? 'an entry'} (${moduleName})`,
-      fix: `one rejected entry takes the whole profile down. Disable or remove it in ${join(profileDir, 'cordis.patch.yml')}, install the missing module, or move the third-party bundle out of the profile into a preset composition.`,
-    }
-  }
-  if (/ERR_MODULE_NOT_FOUND/.test(stderr)) {
-    const moduleName = firstOf(/Cannot find (?:package|module) '([^']+)'/)
-    return {
-      layer: 'link-time',
-      subject: moduleName ?? 'a harness bundle',
-      fix: 'the profile is missing a module its bundle graph imports. Install it in the profile (dsh plugin add …) or trim the bundle.',
-    }
-  }
-  if (/is not a function|is not a valid method|Cannot read properties of (undefined|null)/.test(stderr)) {
-    return {
-      layer: 'run-time',
-      subject: 'a harness service method',
-      fix: `this CLI generation (${cliVersion ?? 'unknown'}) does not provide it; the bridge supports ${supportedRange}. Upgrade: npm install -g @deepseek-ai/dsh@<version in that range>.`,
-    }
-  }
-  return undefined
-}
-
 /** The few stderr lines that actually carry the failure, not the stack tail. */
 function evidenceLines(lines) {
   const interesting = lines
@@ -230,47 +147,6 @@ function evidenceLines(lines) {
     if (picked.length === 3) break
   }
   return picked.length > 0 ? picked : lines.slice(-6)
-}
-
-/**
- * Loader entries that never activated.
- *
- * A rejected entry does not take the profile down — `initialize` and
- * `session/new` both succeed — so the failure mode is a feature that silently
- * is not there. That is how a third-party plugin importing an export 0.1.7
- * removed (`dsh-settings` dropped `SettingsProvider`) disappeared from a
- * working profile: one stderr warning, no tool, RESULT READY. The boot's own
- * report is therefore promoted into the result. Disabled rows are not counted
- * (they are skipped before any import), and the patch applier's benign
- * "entry not found" notes are a different warning entirely.
- *
- * @param lines - the boot's stderr lines.
- * @returns one line per inactive entry (or per skipped bundle), or none.
- */
-function inactiveEntries(lines) {
-  const text = lines.join('\n')
-  const count = /warning: (\d+) entr(?:y|ies) did not activate/.exec(text)?.[1]
-  const inactive = []
-  // A bundle the host's peer gate rejected never reaches the loader, so it has
-  // no "did not activate" entry of its own — and a boot that skipped a bundle
-  // prints no activation count at all. Collect these independently of it, or
-  // the one line that names the missing capability is dropped on the floor.
-  for (const line of lines) {
-    if (!/skipping profile bundle/.test(line)) continue
-    const trimmed = line.trim()
-    inactive.push(trimmed.length > 240 ? `${trimmed.slice(0, 240)}…` : trimmed)
-  }
-  if (count !== undefined) {
-    for (const line of lines) {
-      const match = /^(\S+) \(([^)]+)\): (\S.*)$/.exec(line.trim())
-      if (match !== null) {
-        const reason = match[3]
-        inactive.push(`${match[1]} (${match[2]}): ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`)
-      }
-    }
-  }
-  if (inactive.length > 0) return inactive
-  return count === undefined ? [] : [`${count} entry/entries did not activate (see the log above)`]
 }
 
 if (!existsSync(profileDir)) {
@@ -401,11 +277,18 @@ const responseEvidence = [
 const stderr = [stderrLines.join('\n'), ...responseEvidence].filter((part) => part.length > 0).join('\n')
 const evidence = [...stderrLines, ...responseEvidence]
 const agentInfo = handshake?.result?.agentInfo
-const failure = classify(stderr)
+// A boot is healthy when the handshake was answered, the process is still up,
+// and a real thread opened. On that boot a skipped bundle is a missing
+// capability (the DEGRADED report below), never the failure layer — and when
+// the boot *is* down, a crash signature outranks the skip (diagnose does both).
+const bootOk = handshake?.result !== undefined && exited === undefined && createdSessionId !== undefined
+const failure = diagnose(stderr, {
+  bootOk, profileDir, dshHome, repoDir, supportedRange, profileName, cliPath: cli.path, cliVersion, bridgeVersion, bridgeName,
+})
 child.kill('SIGTERM')
 
 console.log('')
-if (handshake?.result !== undefined && exited === undefined && failure === undefined && createdSessionId !== undefined) {
+if (bootOk && failure === undefined) {
   console.log(`BOOT    OK — ACP initialize answered (agent ${agentInfo?.name ?? '?'} ${agentInfo?.version ?? '?'}), the profile settled, and session/new opened a thread.`)
   if (closureVersion !== undefined && cliVersion !== undefined && closureVersion !== cliVersion) {
     console.log(`WARN    the shared closure holds @deepseek-ai/dsh-agent ${closureVersion} but the CLI is ${cliVersion}; restart the other dsh processes under this home.`)
@@ -430,8 +313,13 @@ if (handshake?.result !== undefined && exited === undefined && createdSessionId 
   console.log('        thread can open, so every new Zed agent thread fails')
   console.log(`        (${opened === undefined ? 'no response inside the timeout' : 'the request was refused'}).`)
 } else if (handshake?.result !== undefined) {
-  console.log('BOOT    FAILED after the handshake — initialize was answered, then the profile died')
-  console.log(`        (exit ${exited ?? 'still running'}); a client sees this as an opaque hang, not an error.`)
+  if (exited !== undefined) {
+    console.log('BOOT    FAILED after the handshake — initialize was answered, then the profile died')
+    console.log(`        (exit ${exited}); a client sees this as an opaque hang, not an error.`)
+  } else {
+    console.log('BOOT    FAILED after the handshake — initialize was answered and a thread opened,')
+    console.log('        but the boot reported a failure; the layer below names it.')
+  }
 } else {
   console.log(`BOOT    FAILED — ${exited === undefined ? 'no handshake inside the timeout' : `exited before the handshake (${exited})`}`)
 }
