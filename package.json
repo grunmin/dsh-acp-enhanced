@@ -31,6 +31,8 @@
     "cordis.patch.yml",
     "README.md",
     "README-zh.md",
+    "CHANGELOG.md",
+    "CHANGELOG-zh.md",
     "LICENSE"
   ],
   "scripts": {
