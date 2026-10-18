@@ -103,8 +103,8 @@ ACP 线上。
 
 ## 快速开始
 
-**需要 `dsh ≥ 0.1.6-alpha.1`**（`npm install -g @deepseek-ai/dsh@0.2.0-rc.2`，或下方 peer 范围内的
-任意版本）：本桥在每条受支持线（0.1.6-alpha.1 直到 0.2.0）上只消费同一套已声明表面，不在运行期
+**需要 `dsh ≥ 0.1.6-alpha.1`**（`npm install -g @deepseek-ai/dsh@0.2.1-rc.2`，或下方 peer 范围内的
+任意版本）：本桥在每条受支持线（0.1.6-alpha.1 直到 0.2.1）上只消费同一套已声明表面，不在运行期
 探测更老的代际。
 
 本包遵循 dsh 官方插件规范（声明了 `dsh.bundle`），安装与官方组合包一致：**一条命令**
@@ -311,7 +311,7 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 ## 兼容性
 
 同一个桥只对应**一套已声明的 harness 表面**：**dsh ≥ 0.1.6-alpha.1**（peer 范围
-`^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2`）。该范围内的**三条线**每次 CI
+`^0.1.6-alpha.1 || ^0.1.7-alpha.1 || ^0.2.0-rc.2 || ^0.2.1-rc.2`）。该范围内的**四条线**每次 CI
 都会做真实启动验证——握手、profile settle 与真实 `session/new`——另有跨代链接检查，以及
 `scripts/support-claim-test.mjs` 这个把本节声明与 npm 自己的 semver 对齐的守卫。桥只消费 harness
 **已声明**的表面：`docs/capability-seams.md` 里的服务、`docs/event-producer-consumer.md` 里的
@@ -320,7 +320,8 @@ dsh --profile acp-enhanced --dump-config   # 每一行来自哪一层
 （`presets.resolveMountable` 在 0.1.6 及以前是私有成员、0.1.7 直接删除，改用 `resolve()` 加该行
 自身的 `broken` 判定），以及 `cordis.patch.yml` 里一行**代际门控行**（agent-preset roster 被上游
 重新打包，门控读取正在启动的安装自身 manifest 的版本，见下）；0.2.0 **一处都不用**（桥导入的每个
-包只变了版本号，新增的那个导出是纯增量）。缺少任一者时会回退到旧形状，两条路径都不会让启动失败。
+包只变了版本号，新增的那个导出是纯增量），0.2.1 同样**一处都不用**——它是第一条 peer 范围新增段
+不改变任何解析结果的线（见下）。缺少任一者时会回退到旧形状，两条路径都不会让启动失败。
 
 唯一会静默出问题的是**宿主自己的 peer 门禁**：从 0.1.7 起，`@deepseek-ai/dsh-app-boot` 会把每个
 bundle 声明的 `@deepseek-ai/dsh*` peer 与正在运行的 CLI 版本逐一核对，不匹配时直接丢掉该 bundle
@@ -334,6 +335,7 @@ bundle 声明的 `@deepseek-ai/dsh*` peer 与正在运行的 CLI 版本逐一核
 
 | 桥版本 | 支持的 dsh 线 | 变化 |
 |---|---|---|
+| **0.11.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2 \|\| ^0.2.1-rc.2` | 支持 0.2.1：`lib/` 一行不改、不新增 patch 行，而且与之前每一条线都不同——**也没有放宽任何东西**：`^0.2.0-rc.2` 本来就包含 `0.2.1-rc.2`，新增段只是把这条线**写进声明**，让 CI 矩阵与链接检查覆盖它。这次真正变化的是安装闭包：`@deepseek-ai/dsh-invariants` **不再是 peer，也不再是 devDependency**——上游在 0.2.0-rc.2 之后就没有再发布它，该线也不再依赖它；按 0.10.0 记录的安装路径规则（声明的 peer 会被装进 profile），留着一个过期声明才是该避免的事 |
 | **0.10.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2` | 支持 0.2.0，同时**下限上移到 0.1.6-alpha.1**（放弃 0.1.5-rc.2：它的启动冒烟在 GitHub runner 上从未通过，未经验证的线不能留在声明里）：`lib/` 一行都不用改，但声明的范围比宿主的 peer 门禁少了一条线——在 0.2.0 CLI 上，门禁已经丢掉整层 patch，而桥自己的 helper 还认为它受支持。≤ 0.1.6 的名册包也不再声明为 peer：安装路径会检查**每一行 patch 的 `name`** 解析出的包，所以一个被代际门控关掉的行也会让 0.2.0 上的 `dsh plugin add` 直接失败。现在 helper 与 npm 的上界语义一致（`<0.2.0-0`），并新增一个守卫，让范围、CI 矩阵与链接检查代际三者始终一致 |
 | **0.9.1** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1` | 支持 0.1.7：agent-preset roster 上游换包，桥同时下发两种形状（代际门控行），并把四个 preset 声明内联进来 |
 | **0.9.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | 只消费已声明表面；下限 0.1.5-rc.2；移除 `session/delete` |
@@ -345,7 +347,10 @@ bundle 声明的 `@deepseek-ai/dsh*` peer 与正在运行的 CLI 版本逐一核
 - **新的 dsh API 线对应一次新的桥发布，而不是把运行期探测写得更宽。** 0.7.x 正是靠探测吞下
   0.1.1 → 0.1.5，也正是它悄悄腐烂的原因。0.1.7 属于重新打包而非新的 API 线，所以 0.9.1 用
   一个 patch 版本吸收它——所需的探测只有一次成员检查，而不是一张代际矩阵。0.2.0 连这一步都不
-  需要：所有被消费的包只变了版本号，所以这次发布只是一次声明变更，外加保证声明的守卫。
+  需要：所有被消费的包只变了版本号，所以这次发布只是一次声明变更，外加保证声明的守卫。0.2.1 又
+  往前一步：新增段完全不改变解析结果（`^0.2.0-rc.2` 本来就包含 `0.2.1-rc.2`），所以这次发布是为了
+  **写出并真实启动**这条线——没有写进声明的线，守卫管不到；写进声明却从未启动过的线，就是「悄悄
+  腐烂」的定义。
 - **下限只随桥的 minor 移动，且绝不静默**：CLI 落在范围之外时启动器会在启动前告警，doctor 会以
   `RESULT FAIL — CLI too old`（低于下限）或 `RESULT FAIL — CLI line not supported by this bridge`
   （越过上限）停下。
@@ -515,6 +520,44 @@ preset 声明与 `@deepseek-ai/dsh-web-app@0.2.0-rc.2` 的 `config` 子树相同
 跳过、boot 照常稳定；但授予它就等于接下警告里写的崩溃/数据损坏风险，而那条 bundle 的代码在新线上是否真的
 能用，恰恰是没有验证的部分。
 
+### 0.11.0 的变更（增量：支持 dsh 0.2.1）
+
+`dsh` 0.2.1（仍是 RC 线：`latest` 是 0.2.0-rc.2，`next` 是 0.2.1-rc.2）带来两处用户可见的变化，
+都不需要本桥做任何事。其一是**宿主侧的 DeepSeek 搜索与抓取**：harness 的 `dsh-base` bundle——本桥
+bundle 所扩展的那一层——新增了 `web-deepseek-api` 行，让 `web_search`/`web_fetch` 走 DeepSeek 专用
+的 Search 与 Fetch 端点，而不是一次完整的辅助模型请求。它从 `DEEPSEEK_API_KEY` 取凭据，并在 harness
+自己的网页搜索设置里选择启用；本桥没有任何行、peer 或 import 参与其中，在用户打开那个开关之前，
+已有 profile 的搜索配置也不会被改动。其二是纯 UI：新增的客户端插件只为模型选择器里的 1017 检查点
+加标签，而它挂在 **web/桌面** bundle 层，ACP profile 根本不加载它。
+
+本桥链接的一切都没变：在其导入的包上，0.2.1 与 0.2.0 的差别只有 `package.json` 版本号；
+agent-preset roster 仍是 0.1.7 引入的「registry + 声明行」形状；`cordis.patch.yml` 里的代际门控
+（`minor > 1`）本来就把 0.2.1 归为 registry-roster 线。所以这次发布是声明变更加它的证据：
+
+- 每个 `@deepseek-ai/dsh*` peer 加上 `|| ^0.2.1-rc.2`。这一段**什么都不放宽**：`^0.2.0-rc.2` 的上界
+  是 `<0.3.0-0`，本来就包含 `0.2.1-rc.2`。之所以仍然写出来，是因为这个范围同时是守卫检查的「线
+  清单」，而 `scripts/support-claim-test.mjs` 要求**每一段**都对应一个 CI 矩阵版本与一个链接检查
+  代际——把线写进声明，才是让它背后真有一次启动的机制；
+- `@deepseek-ai/dsh-invariants` 从 `peerDependencies` **和** `devDependencies` 里移除。它一直是纯
+  版本跟踪的 peer（`lib/` 从不 import 它，也从不是 patch 行），而上游在 0.2.0-rc.2 之后就没再发布
+  它，0.2.1 的闭包里没有它。留着这个声明只会让 pnpm 装进一个该线并不存在的包——正是 0.10.0 记录过
+  的 ≤ 0.1.6 名册包的失效模式；
+- 第四代 `compat-check`（`framesRegistry021`）按 `dsh-invariants` **缺席**来钉住 0.2.1 那一套，于是
+  链接检查描述的是该线真实解析出的闭包，而不是上一条线的；
+- 启动矩阵与链接检查现在覆盖四条线，canary 的注释也记录了各 dist-tag 分别指向哪条线；
+- 有一处行为差异是**如实记录、本次不改**：本桥内联的四条 preset 声明是它自己对宿主组合的拷贝，
+  而 0.2.1-rc.2 把上游那四份全部重写了——去掉 `persona.config.suffix` 与两个子代理的
+  `backgroundMode`（拷贝里仍然传着），给 `standard` 加 `time-context`、`tool-schedule`、
+  `tool-plugin-market`，给 `minimal` 加 `compaction` 组与 `tool-fs`，并改写了 plan mode 的措辞。
+  这份拷贝在 0.2.1 上仍能挂载（keyless 冒烟会开一个会话，从而组合默认 preset），所以 0.2.1 上的
+  ACP 会话组合的是 **0.2.0** 那套：没有 `time-context`、没有 `tool-schedule`，plan mode 文案也是旧的。
+  要跟进新形状需要按线声明，因为新增行里有两个包只在 0.2.1 存在，而安装路径会在每条声明线上解析
+  每一行 `name`——见 `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 与 §7。
+
+验证的形状与 0.10.0 相同，同样把两件事留给维护者：需要模型的两条腿，以及一次真实的 Zed 会话。
+本次发布在本机实测的部分：四个离线守卫、四代链接检查、安装路径、doctor，以及 0.2.1-rc.2 上的
+keyless 启动冒烟——见 `docs/plans/2026-10-18-dsh-0.2.1-support.md` §5。
+
 ### 从已发布的 ≤ 0.7.0 升级
 
 0.1.3 之前的 API 线止于 **0.7.0**，它的桥和 CLI **必须一起动**——只升一半，
@@ -528,8 +571,8 @@ preset 声明与 `@deepseek-ai/dsh-web-app@0.2.0-rc.2` 的 `config` 子树相同
 
 升级清单：
 
-1. `npm install -g @deepseek-ai/dsh@0.2.0-rc.2`（或上面 peer 范围内的任意版本）。
-2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`。升级桥是显式动作：profile 里的依赖
+1. `npm install -g @deepseek-ai/dsh@0.2.1-rc.2`（或上面 peer 范围内的任意版本）。
+2. `dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.11.0`。升级桥是显式动作：profile 里的依赖
    是对 0.x 的 caret，所以 `dsh plugin update` **不会**自行把你带到新的 minor。
 3. 以前是从检出目录启动、或设过 `DSH_PATH`？旧启动器会自行切到 `~/.dsh-acp`，现在不会了。请在 Zed 的
    `agent_servers.env` 里设 `DSH_HOME=<那个 home>`，或在默认 home 里重建 profile。启动器若在那里
@@ -563,7 +606,7 @@ dsh 每次启动都会把它 heal 成最后启动的那个 CLI。因此：
 当前解析结果随时可查：
 
 ```sh
-node scripts/compat-check.mjs        # 仅限仓库检出：分别安装 0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2 三套，逐一导入本桥
+node scripts/compat-check.mjs        # 仅限仓库检出：分别安装 0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2、0.2.1-rc.2 四套，逐一导入本桥
 node <pkg>/scripts/acp-doctor.mjs   # CLI 与闭包版本、bundle 列表，并真实启动一次（随包发布）
 ```
 
@@ -633,7 +676,7 @@ manifest-gate 那行是唯一不是堆栈的一类：boot 会继续跑、只是�
 | 轮次以 usage 结束但**面板没有回复文本**（空白） | `ACP_DEBUG=1`，看是否有 `agent/assistant-stream frame=chunk` | 0.9.0 起唯一的实时 seam 是 `agent/assistant-stream` 帧，某个 step 完全没有上线文本时由已提交的 `assistant/message` 兜底。有帧却无文本 = 客户端渲染问题；完全没有帧 = 正在走兜底路径（桥太旧就升级） |
 | 升级 dsh 后报 `Unknown agent preset: <id>` | `ls $DSH_HOME/.agent-presets` 与 profile 的 `cordis.patch.yml` | 该 preset 已不在名册里——0.1.7 起不再扫描 `$DSH_HOME/.agent-presets`。把它改成一条 `@deepseek-ai/dsh-agent-preset` 声明行（见「自建 preset」）；0.9.1 下*空*会话会先用名册默认值打开（stderr 有说明），但恢复已跑过它的线程在补上行之前仍然失败 |
 | profile 以前有的能力静默消失 | `node <pkg>/scripts/acp-doctor.mjs`——降级启动会打印 `DEGRADED <n> inactive items` 并列出条目名 | 某个 entry 导入失败不会拖垮 profile，它只是不存在。该 bundle 是为另一条线构建的：它 import 了本线已删除的导出（0.1.7 用 `SettingsForms` 替换了 `dsh-settings` 里的 `SettingsProvider`）。给这条 dsh 线升级该 bundle，或直接移除它 |
-| 升级 dsh 后出现 `dsh: skipping profile bundle "<名称>": … peerDependencies {…}`——整个 bundle 没了 | 那行 stderr、agent 的 stderr，或 `acp-doctor.mjs`（boot 因此挂掉时报 `LAYER manifest-gate`——也就是自跳过——仍能用则报 `DEGRADED`；两种情况都意味着那条 bundle 的能力没了） | CLI 的 peer 门禁：从 0.1.7 起 `dsh-app-boot` 会把每个 bundle 声明的 `@deepseek-ai/dsh*` peer 与运行版本核对，不匹配就丢掉它的整层 patch（安装路径更会直接以 `incompatible-version` 拒绝）。只有该 bundle 的发布者能放宽范围——升级它（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.10.0`），或把 CLI 固定到该 bundle 声明的线上。本桥声明了上面三条线；被跳过的是第三方 bundle 时，是*它*的范围止步于旧线，升级本桥没有用 |
+| 升级 dsh 后出现 `dsh: skipping profile bundle "<名称>": … peerDependencies {…}`——整个 bundle 没了 | 那行 stderr、agent 的 stderr，或 `acp-doctor.mjs`（boot 因此挂掉时报 `LAYER manifest-gate`——也就是自跳过——仍能用则报 `DEGRADED`；两种情况都意味着那条 bundle 的能力没了） | CLI 的 peer 门禁：从 0.1.7 起 `dsh-app-boot` 会把每个 bundle 声明的 `@deepseek-ai/dsh*` peer 与运行版本核对，不匹配就丢掉它的整层 patch（安装路径更会直接以 `incompatible-version` 拒绝）。只有该 bundle 的发布者能放宽范围——升级它（`dsh plugin --profile acp-enhanced add dsh-acp-enhanced@0.11.0`），或把 CLI 固定到该 bundle 声明的线上。本桥声明了上面四条线；被跳过的是第三方 bundle 时，是*它*的范围止步于旧线，升级本桥没有用 |
 | 会话侧边栏空白或迟迟不出现（dsh 0.1.7 上的 ≤ 0.9.0 桥） | `ls $DSH_HOME/sessions \| wc -l`，以及 agent stderr 里的 `timeout: session/list` | 修复前的列表会解码每一个已存日志（见「0.1.7 对『会话库很大』意味着什么」）；几百个会话就会超过 30s 线路超时。升级桥到 ≥ 0.9.1——现在秒级返回，其余标题以 `session_info_update` 陆续送达 |
 | 改了插件却不生效 | profile `cordis.patch.yml` 的 mtime | 改动只在**下一个**进程生效：新开 agent 线程（或重启 Zed） |
 | Stop 之后线程直接死掉：`Internal error: prompt was not queued: Cannot read properties of null (reading 'kind')`，同一线程里改配置项也报 `{"details":"Cannot read properties of null (reading 'kind')"}` | `ACP_DEBUG=1`——该线程最后一条 `turn/end` 的 `reason=null`，再次加载它也一样失败 | 桥 ≤ 0.9.1 把 `new Error(...)` 当作 harness 的取消原因，而 `AgentCancelCause` 是封闭联合（`{kind:'user'\|'parent'\|'disposed'\|'hook'}`）。harness 自己的轮次收尾因此撞上 `assertNever` 抛错，落盘 `turn/end {reason: null}`；按 `reason.kind` 折叠它的会话 projection 会直接抛错，于是该会话之后每次 projection 读取（prompt、改配置、`session/load`）都失败。该线程本身无法恢复——新开一个；升级桥即可消除根因（下游用 `reason?.kind` 只是不再抛错，坏事件仍留在日志里） |
@@ -643,7 +686,7 @@ manifest-gate 那行是唯一不是堆栈的一类：boot 会继续跑、只是�
 
 ```sh
 pnpm install                          # 安装开发依赖（仓库锁定 CLI 与测试脚本）
-node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 三套临时安装）
+node scripts/compat-check.mjs         # 支持线上的链接检查（0.1.6-alpha.2 / 0.1.7-rc.2 / 0.2.0-rc.2 / 0.2.1-rc.2 四套临时安装）
 node scripts/support-claim-test.mjs   # 声明范围、CI 矩阵与 helper 和 npm semver 一致（CI 阻塞步骤）
 node scripts/boot-classify-test.mjs   # 仍可用的 boot 上被跳过只是 DEGRADED 而非失败；崩溃签名优先于跳过行（CI 阻塞步骤）
 node scripts/api-surface-check.mjs    # 公开表面守卫：不得使用未声明的 harness API（CI 阻塞步骤）
@@ -668,7 +711,7 @@ node scripts/acp-doctor.mjs           # 真实启动一次 profile，指出失�
 scripts/init-acp-home.sh              # 可选：引导**独立** home（启动器不会自行切过去）
 ```
 
-harness 包的 devDependency 用该线的 prerelease range（当前 `^0.2.0-rc.2`，会解析到
+harness 包的 devDependency 用该线的 prerelease range（当前 `^0.2.1-rc.2`，会解析到
 锁定的 `@deepseek-ai/dsh` CLI 自己声明的精确闭包），让仓库依赖树与全新 CLI 安装解析出
 同一个连贯家族——在此用精确 patch
 锁定、与 CLI 的 range 闭包混存会得到分裂闭包（同名包两个版本），profile 启动时报
