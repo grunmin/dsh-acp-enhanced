@@ -62,10 +62,10 @@ declaration change plus its evidence:
   on every declared line — see `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 and §7.
 
 Verification has the same shape as 0.10.0's and leaves the same two gaps to the maintainer:
-the model-backed legs and a real Zed session. Measured locally for this release: the four
-offline guards, the link check across all four generations, the install path, the doctor and
-the keyless boot smoke on 0.2.1-rc.2 — see
-`docs/plans/2026-10-18-dsh-0.2.1-support.md`, §5.
+the model-backed legs and a real Zed session. Measured locally for this release: the five
+offline guards (this release adds `scripts/docs-claim-test.mjs` to the four), the link check
+across all four generations, the install path, the doctor and the keyless boot smoke on
+0.2.1-rc.2 — see `docs/plans/2026-10-18-dsh-0.2.1-support.md`, §5.
 
 ## [0.10.0] - 2026-10-01
 
