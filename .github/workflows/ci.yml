@@ -29,10 +29,17 @@ jobs:
         # is wide enough. Every job below boots a real profile, so a green run is
         # boot-time verification of the support claim — the old matrix had no
         # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
+        # 0.2.1 is the first line added since, and the first one whose
+        # composition *nothing* in this repo changes for: the range alternative
+        # `^0.2.1-rc.2` narrows nothing (it is already inside `^0.2.0-rc.2`), so
+        # the leg exists to prove the boot, not to widen a gate. What it proves
+        # is that the bridge's rows still resolve on a line that dropped a
+        # package the 0.2.0 closure carried (`@deepseek-ai/dsh-invariants` stopped
+        # publishing at 0.2.0-rc.2) — see docs/plans/2026-10-18-dsh-0.2.1-support.md.
         # `.github/workflows/canary.yml` watches the line after these.
         # `scripts/support-claim-test.mjs` fails if this list, the declared
         # range and `scripts/compat-check.mjs`'s generations disagree.
-        dsh-version: ['0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
+        dsh-version: ['0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
