@@ -199,7 +199,12 @@ try {
   if (received.writes.length > 0) {
     const w = received.writes[0]
     check('write carries session id', w.sessionId === sessionId)
-    check('write carries path+content', w.path === '/tmp/acp-client-tools-test.txt' && w.content === 'hello acp',
+    // The model's exact bytes are not the bridge's contract: the request asked
+    // for "hello acp" and the model may append a newline (observed on one CI
+    // leg of run 39807955780 while the other seven legs passed). What this
+    // guard is for is that the write request reached the client with the path
+    // and the content the model chose — so compare trimmed text.
+    check('write carries path+content', w.path === '/tmp/acp-client-tools-test.txt' && String(w.content ?? '').trim() === 'hello acp',
       JSON.stringify({ path: w.path, content: w.content }))
   }
 
@@ -262,7 +267,7 @@ try {
   check('write card is kind edit (diff pairing)', writeCall?.update?.kind === 'edit',
     JSON.stringify(writeCall?.update?.kind))
   const writeDiff = writeCall?.update?.content?.find((c) => c.type === 'diff')
-  check('write card body is a diff', writeDiff?.path === '/tmp/acp-client-tools-test.txt' && writeDiff?.newText === 'hello acp',
+  check('write card body is a diff', writeDiff?.path === '/tmp/acp-client-tools-test.txt' && writeDiff?.newText?.trim() === 'hello acp',
     JSON.stringify(writeDiff))
   check('write card carries clickable locations', writeCall?.update?.locations?.[0]?.path === '/tmp/acp-client-tools-test.txt',
     JSON.stringify(writeCall?.update?.locations))
