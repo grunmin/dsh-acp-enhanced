@@ -806,3 +806,11 @@
         provider: !!js "process.env.DSH_ACP_PROVIDER ?? 'deepseek-official'"
         model: !!js "process.env.DSH_ACP_MODEL ?? 'deepseek-v4-flash'"
         preset: !!js "process.env.DSH_ACP_PRESET"
+        # Opt-in, off by default: list every provider the llm service has
+        # registered instead of only the routed one (issue #7). A provider with
+        # no usable credential still appears and picking it parks the session on
+        # a route that cannot dispatch, which is why this is not the default —
+        # and why it is a route variable here rather than a schema edit in the
+        # profile. `applySelection` fails such a pick as invalid params and
+        # leaves the session on its current route.
+        includeAllProviders: !!js "process.env.DSH_ACP_INCLUDE_ALL_PROVIDERS === 'true'"
