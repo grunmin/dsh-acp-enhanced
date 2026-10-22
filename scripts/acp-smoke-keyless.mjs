@@ -105,6 +105,28 @@ function rpc(method, params, timeoutMs = 30000) {
   })
 }
 
+/**
+ * Like `rpc`, but resolves the whole JSON-RPC message instead of unwrapping
+ * `result`. A wire-contract assertion needs the error *code* a client actually
+ * reads (`-32602` invalid params versus the generic `-32603` a raw handler
+ * throw produces), and the plain helper flattens that structure into a string.
+ */
+function rpcMessage(method, params, timeoutMs = 30000) {
+  const id = String(++seq)
+  lastMethod = method
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      reject(new Error(`timeout: ${method}`))
+    }, timeoutMs)
+    pending.set(id, (msg) => {
+      clearTimeout(timer)
+      resolve(msg)
+    })
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
+  })
+}
+
 async function main() {
   try {
     const init = await rpc('initialize', { protocolVersion: 1, clientCapabilities: {} })
@@ -161,8 +183,16 @@ async function main() {
       additionalDirectories: [extraRoot],
       mcpServers: [],
     })
-    check('session/load accepts updated additionalDirectories',
-      reloaded !== undefined && Array.isArray(reloaded.configOptions),
+    // Both fields are a compatibility promise (issue #13): a restoring client
+    // gets model/mode state from this response alone — the history replay
+    // carries conversation, never config — so a refactor that drops one is
+    // silent. `modes` is the transition-period field; `configOptions` is the
+    // preferred surface. Pin both on the wire.
+    check('session/load returns both configOptions and modes',
+      reloaded !== undefined
+        && Array.isArray(reloaded.configOptions)
+        && (reloaded.configOptions ?? []).some((option) => option.id === 'model')
+        && Array.isArray(reloaded.modes?.availableModes) && reloaded.modes.availableModes.length >= 3,
       JSON.stringify(Object.keys(reloaded ?? {})))
     const bad = await rpc('session/new', {
       cwd: process.cwd(),
@@ -291,6 +321,29 @@ async function main() {
       }
     } else {
       console.log('SKIP  model switch (only one advertised model)')
+    }
+
+    // Regression 5: an unroutable route must surface as invalid params that
+    // name the route, not as the generic wire internal error a raw handler throw
+    // turns into — and the session must keep the route it already had. Asserted
+    // on the message rather than the unwrapped result: the *code* is the
+    // contract here (a dropdown that silently snaps back teaches nobody why).
+    const unroutable = await rpcMessage('session/set_config_option', {
+      sessionId, configId: 'model', value: 'no-such-provider/no-such-model',
+    })
+    check('an unroutable model surfaces as invalid params (-32602), not -32603',
+      unroutable.error?.code === -32602, JSON.stringify(unroutable.error ?? unroutable.result))
+    check('the unroutable-model error names the route',
+      /no-such-provider\/no-such-model/.test(String(unroutable.error?.message ?? '')),
+      JSON.stringify(unroutable.error?.message ?? ''))
+    if (unroutable.error !== undefined && origModelValue !== undefined) {
+      const mark = notifications.length
+      await rpc('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/status' }] })
+      const statusAfter = notifications.slice(mark)
+        .filter((n) => n.update?.sessionUpdate === 'agent_message_chunk')
+        .map((n) => n.update.content?.text ?? '').join('\n')
+      check('a failed switch leaves the session on its current route',
+        statusAfter.includes(String(origModelValue)), String(origModelValue))
     }
 
     // Regression 4: a configured preset this roster does not have must not make
