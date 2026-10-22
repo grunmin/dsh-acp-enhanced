@@ -7,6 +7,39 @@
 完整工程记录（测了什么、否决了什么、还剩什么要验）在 [`docs/plans/`](docs/plans/) 下，每条都链过去。
 英文原件见 [CHANGELOG.md](CHANGELOG.md)。
 
+## [0.11.1] - 2026-10-22
+
+逐 token 流式成为默认；选中一个无法路由的模型时，现在会说明原因，并且不会动当前路由。
+按仓库策略属于 patch 版本：只打 tag + 发 npm，不发 GitHub release。
+
+### 变更
+
+- `streamDeltas` 默认值改为 `true`：回复与思考过程在模型还在写的时候就到达客户端（75ms 合并
+  一次上线），而不是把每个块攒到 commit 才发。块提交前什么都不渲染的桥，在任何长回复上都会被
+  读成卡住；而块缓冲换来的东西——藏起被重试的那次尝试留下的半截文本——既罕见、现在也已可见。
+  取舍本身没变，变的只是默认值：已经发出去的文字收不回来，所以中途重试（或取消）会保留它已
+  交付的半截，并用可见的 `_[stream interrupted — retrying]_` 标记与重试结果隔开。想要旧的
+  块粒度行为，把 `streamDeltas: false` 写进 acp-enhanced 行，或在 profile 环境里设
+  `DSH_ACP_STREAM_DELTAS=false`。
+
+### 新增
+
+- `DSH_ACP_INCLUDE_ALL_PROVIDERS=true` 会让模型下拉列出 `llm` 服务已注册的**所有** provider，
+  而不只是当前路由的那个（issue #7）。这个开关本来就有，但只在文档里、不改 profile patch 就
+  够不到；现在它和其它 `DSH_ACP_*` 路由变量一起接在随包发布的那一行上。默认仍然关闭——没有
+  可用凭据的 provider 也会出现，选中它会让会话停在一个派发不出去的路由上——两份 README 都
+  写明了这个代价。
+
+### 修复
+
+- 无法路由的模型选择现在以 ACP **invalid params 并点明路由** 返回，而不是通用的 wire internal
+  error（issue #7 第 3 项；PR #10，作者 @luckzylp）。在下拉里选中不可路由的
+  `provider/model` 会报 `Invalid params: cannot switch to <route>: …`，并让会话保留原来的路由；
+  `/model <route>` 也把同样的原因作为命令文本返回，不再抛异常。@luckzylp 已记入
+  `contributors`。
+- keyless 启动 smoke 钉住了两条否则会静默回归的 wire 契约：`session/load` 必须继续同时返回
+  `configOptions` 与 `modes`（issue #13）；不可路由的模型必须回 `-32602`，而不是 `-32603`。
+
 ## [0.11.0] - 2026-10-22
 
 支持 dsh **0.2.1**。没有放宽任何东西——`^0.2.0-rc.2` 本来就包含 `0.2.1-rc.2`——

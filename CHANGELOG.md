@@ -8,6 +8,44 @@ today; per-release notes live here instead. The long-form engineering records �
 measured, what was rejected, what is left to verify — are in [`docs/plans/`](docs/plans/),
 linked from each entry. A Chinese mirror is kept at [CHANGELOG-zh.md](CHANGELOG-zh.md).
 
+## [0.11.1] - 2026-10-22
+
+Token-level streaming becomes the default, and a model pick that cannot route now says why — and
+leaves the session alone. Patch release under this repo's policy: tag and npm only, no GitHub
+release.
+
+### Changed
+
+- `streamDeltas` now defaults to `true`: the reply and the model's thinking reach the client while
+  it is still writing, coalesced on the 75 ms timer, instead of holding every block until it
+  commits. A bridge that paints nothing until a block lands reads as hung on every long reply,
+  while what block buffering bought — hiding a retried attempt's abandoned partial — is both rare
+  and now visible instead. The trade-off is unchanged, only its default: text already sent cannot
+  be unsent, so a mid-block retry (or a cancel) keeps the partial it delivered and a visible
+  `_[stream interrupted — retrying]_` marker separates it from the retried attempt. Set
+  `streamDeltas: false` on the acp-enhanced row, or `DSH_ACP_STREAM_DELTAS=false` in the profile's
+  environment, for the older block-granularity behaviour.
+
+### Added
+
+- `DSH_ACP_INCLUDE_ALL_PROVIDERS=true` lists every provider the `llm` service has registered in
+  the model dropdown, not only the routed one (issue #7). The knob existed but was documented and
+  unreachable without hand-editing a profile patch; it is now wired on the shipped row next to the
+  other `DSH_ACP_*` route variables. Still off by default — a provider without a usable credential
+  still appears and picking it parks the session on a route that cannot dispatch — and both
+  READMEs state that cost.
+
+### Fixed
+
+- A model selection that cannot route now surfaces as ACP **invalid params naming the route**
+  instead of the generic wire internal error (issue #7 item 3; PR #10 by @luckzylp). Picking an
+  unroutable `provider/model` reports `Invalid params: cannot switch to <route>: …` and leaves the
+  session on the route it had; `/model <route>` reports the same reason as command text instead of
+  throwing. @luckzylp is credited in `contributors`.
+- The keyless boot smoke pins two wire contracts that could otherwise regress in silence:
+  `session/load` must keep returning both `configOptions` and `modes` (issue #13), and an
+  unroutable model must answer `-32602`, not `-32603`.
+
 ## [0.11.0] - 2026-10-22
 
 dsh **0.2.1** support. Nothing was widened — `^0.2.0-rc.2` already contained `0.2.1-rc.2` — and
