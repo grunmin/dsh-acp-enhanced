@@ -142,7 +142,8 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
       "env": {
         "DSH_ACP_PROVIDER": "deepseek-official",  // 官方 provider id
         "DSH_ACP_MODEL": "deepseek-v4-flash",     // 官方模型 id
-        "DSH_ACP_PRESET": "standard"              // 可选：agent 预设 id（minimal / standard / code / cordis / 自定义）
+        "DSH_ACP_PRESET": "standard",             // 可选：agent 预设 id（minimal / standard / code / cordis / 自定义）
+        "DSH_ACP_INCLUDE_ALL_PROVIDERS": "true"   // 可选：模型下拉里列出所有已注册 provider
       }
     }
   }
@@ -154,6 +155,11 @@ Zed 会用极简 PATH 拉起 agent，因此用随附启动器 `scripts/dsh-acp-z
 > 某个特定模式就设置它。API key 不必写进 Zed：存入 `~/.dsh/.credentials.yaml`
 > （`DEEPSEEK_API_KEY`）由 dsh 凭据服务解析即可；启动脚本还会兜底继承正在运行的
 > `dsh web` 进程的 key。
+
+> `DSH_ACP_INCLUDE_ALL_PROVIDERS=true` 会让模型下拉列出 **所有** 已注册到 `llm` 服务的
+> provider，而不只是当前路由的那一个。默认关掉是有原因的：没有可用凭据的 provider 也会
+> 出现，选中它会话就停在一个派发不出去的路由上——切换会以「invalid params」失败并点明
+> 路由名，会话保留原来的路由。当一个 profile 要跨多个 provider、并按会话挑路由时再打开。
 
 排查「卡住的轮次」（是模型请求卡住，还是工具卡住）：
 

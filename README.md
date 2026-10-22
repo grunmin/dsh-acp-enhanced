@@ -163,7 +163,8 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
       "env": {
         "DSH_ACP_PROVIDER": "deepseek-official",  // the official provider id
         "DSH_ACP_MODEL": "deepseek-v4-flash",     // the official model id
-        "DSH_ACP_PRESET": "standard"              // optional: agent preset id (minimal / standard / code / cordis / yours)
+        "DSH_ACP_PRESET": "standard",             // optional: agent preset id (minimal / standard / code / cordis / yours)
+        "DSH_ACP_INCLUDE_ALL_PROVIDERS": "true"   // optional: list every registered provider in the model dropdown
       }
     }
   }
@@ -176,6 +177,13 @@ Zed spawns agents with a minimal PATH, so use the shipped launcher
 > The API key does not have to live in Zed:
 > store it in `~/.dsh/.credentials.yaml` (`DEEPSEEK_API_KEY`) and the dsh credentials
 > service resolves it; the launcher also falls back to a running `dsh web` process's key.
+
+> `DSH_ACP_INCLUDE_ALL_PROVIDERS=true` opts the model dropdown into **every** provider the
+> `llm` service has registered, instead of only the routed one. It is off by default for a
+> reason: a provider without a usable credential still appears, and picking it parks the
+> session on a route that cannot dispatch — the switch fails as an invalid-params error
+> naming the route and the session keeps the one it had. Set it when one profile routes
+> across several providers and you want to pick per session.
 
 Debugging a stalled turn (is it the model request or the tool?):
 
