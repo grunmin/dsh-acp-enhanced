@@ -15,17 +15,17 @@ no `lib/` line changed: the release names the line, boots it in CI, and drops
 `@deepseek-ai/dsh-invariants`. Migration record:
 [`docs/plans/2026-10-18-dsh-0.2.1-support.md`](docs/plans/2026-10-18-dsh-0.2.1-support.md).
 
-`dsh` 0.2.1 (still an RC line — `latest` is 0.2.0-rc.2 and `next` is 0.2.1-rc.2) adds two
-things a user can see, and needs nothing from this bridge to get either. The first is
-host-side **DeepSeek search and fetch**: the harness's `dsh-base` bundle — the layer this
-bridge's own bundle extends — now registers a `web-deepseek-api` row, which serves
-`web_search`/`web_fetch` through DeepSeek's dedicated Search and Fetch endpoints instead of a
-full auxiliary model request. It takes its credential from `DEEPSEEK_API_KEY` and is selected
-in the harness's own web-search settings; no row, peer or import of this bridge's is involved,
-and it changes nothing about an existing profile's web-search configuration until that switch
-is used. The second is UI-only: a new client plugin labels the 1017 checkpoint in the model
-picker, and it is wired into the **web/desktop** bundle layer, so an ACP profile does not load
-it at all.
+`dsh` 0.2.1 (an RC line, and — as of the registry change on 2026-10-19 — the line `latest`
+installs as well as `next`) adds two things a user can see, and needs nothing from this bridge to
+get either. The first is host-side **DeepSeek search and fetch**: the harness's `dsh-base` bundle
+— the layer this bridge's own bundle extends — now registers a `web-deepseek-api` row, which
+serves `web_search`/`web_fetch` through DeepSeek's dedicated Search and Fetch endpoints instead
+of a full auxiliary model request. It takes its credential from `DEEPSEEK_API_KEY` and is
+selected in the harness's own web-search settings; no row, peer or import of this bridge's is
+involved, and it changes nothing about an existing profile's web-search configuration until that
+switch is used. The second is UI-only: a new client plugin labels the 1017 checkpoint in the
+model picker, and it is wired into the **web/desktop** bundle layer, so an ACP profile does not
+load it at all.
 
 Everything this bridge links against is unchanged: across the packages it imports, 0.2.1
 differs from 0.2.0 by `package.json` versions alone, the agent-preset roster keeps the
@@ -75,11 +75,24 @@ across all four generations, the install path, the doctor and the keyless boot s
   is strict, so any session composed from the bridge's inlined `standard` / `ptc` / `cordis`
   rosters failed prompt assembly with `unknown prompt variable "{{cwd}}"` before the first model
   request: the boot was fine and the mount was fine, every turn failed. The three persona rows now
-  carry the model prefix only, as upstream 0.2.1's own preset files do, and the working-directory
-  service supplies the directory context. `profile/cordis.yml` — the hand-rolled reference
-  composition — drops the same clause from its spine persona. This is the one row of the §2.3
-  preset table that was never a fidelity gap, and the only upstream preset change this release
-  adopts.
+  carry the model prefix only, as upstream 0.2.1's own preset files do. `profile/cordis.yml` —
+  the hand-rolled reference composition — drops the same clause from its spine persona. This is
+  the one row of the §2.3 preset table that was never a fidelity gap, and the only upstream
+  preset change this release adopts.
+
+  Where the directory comes from is line-dependent, and this release does not pretend otherwise:
+  `dsh-agent-loop` still registers `cwd` on 0.1.6-alpha.2, 0.1.7-rc.2 and 0.2.0-rc.2, but none of
+  those lines' `dsh-base` bundles carries a `working-directory` row, so a **single-root** session
+  there no longer learns its directory from the prompt. Multi-root sessions keep it through this
+  bridge's own `acp:workspace-roots` context, which is empty for a single root; only 0.2.1
+  supplies it host-side (`Current working directory: …`). Kept unconditional rather than
+  version-gated: three `!!js` probes on the boot path for one sentence is the worse trade, and
+  the model can still read its directory with `pwd`.
+
+  This also explains why the fix is urgent rather than tidy. `latest` now installs this line, and
+  the published 0.10.0 both admits it through its peer range (`^0.2.0-rc.2` contains
+  `0.2.1-rc.2`) and still ships the suffix — so a default install of the published bridge fails
+  its first turn on the line npm hands out by default.
 
 ## [0.10.0] - 2026-10-01
 

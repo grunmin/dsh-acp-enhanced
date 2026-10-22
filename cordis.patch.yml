@@ -190,7 +190,14 @@
     #     follows, and not for fidelity: `dsh-agent-loop` on 0.2.1 registers only
     #     `provider` and `model` as prompt variables (`cwd` was registered through
     #     0.1.7), so a `{{cwd}}` suffix failed prompt assembly and killed every turn
-    #     on that line — the boot was fine, the mount was fine. Everything else
+    #     on that line — the boot was fine, the mount was fine. The sentence is
+    #     genuinely lost on the older lines: their `dsh-agent-loop` still registers
+    #     `cwd`, but no `dsh-base` bundle before 0.2.1 has a `working-directory`
+    #     row, so a single-root session there no longer learns its directory from
+    #     the prompt (multi-root is still covered by the bridge's own
+    #     `acp:workspace-roots` context). 0.2.1 supplies it host-side, so dropping
+    #     the suffix there is lossless. Version-gating it was rejected: three
+    #     `!!js` probes on the boot path for one sentence. Everything else
     #     still describes the **0.2.0** composition for every line including 0.2.1:
     #     it mounts there (measured: the keyless smoke opens a session, which
     #     composes the default preset), and the remaining differences are a

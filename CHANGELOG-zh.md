@@ -14,8 +14,8 @@
 `@deepseek-ai/dsh-invariants`。迁移记录：
 [`docs/plans/2026-10-18-dsh-0.2.1-support.md`](docs/plans/2026-10-18-dsh-0.2.1-support.md)。
 
-`dsh` 0.2.1（仍是 RC 线：`latest` 是 0.2.0-rc.2，`next` 是 0.2.1-rc.2）带来两处用户可见的变化，
-都不需要本桥做任何事。其一是**宿主侧的 DeepSeek 搜索与抓取**：harness 的 `dsh-base` bundle——本桥
+`dsh` 0.2.1（RC 线；自 2026-10-19 的 registry 变动起，`latest` 与 `next` 都指向它）带来两处
+用户可见的变化，都不需要本桥做任何事。其一是**宿主侧的 DeepSeek 搜索与抓取**：harness 的 `dsh-base` bundle——本桥
 bundle 所扩展的那一层——新增了 `web-deepseek-api` 行，让 `web_search`/`web_fetch` 走 DeepSeek 专用
 的 Search 与 Fetch 端点，而不是一次完整的辅助模型请求。它从 `DEEPSEEK_API_KEY` 取凭据，并在 harness
 自己的网页搜索设置里选择启用；本桥没有任何行、peer 或 import 参与其中，在用户打开那个开关之前，
@@ -60,9 +60,20 @@ keyless 启动冒烟——见 `docs/plans/2026-10-18-dsh-0.2.1-support.md` §5�
   两个提示词变量（`cwd` 一直注册到 0.1.7）。插值是严格的，所以凡是走本桥内联
   `standard` / `ptc` / `cordis` roster 的会话，都在首个模型请求之前的提示词组装阶段死于
   `unknown prompt variable "{{cwd}}"`：启动正常，挂载也正常，回合全灭。这三条 persona 行现在与
-  上游 0.2.1 自己的 preset 文件一致，只保留模型前缀，工作目录由 working-directory 服务提供。
-  `profile/cordis.yml`（手写参考组合）的 spine persona 也删去了同一句。这是 §2.3 preset 对照表里
-  唯一从来不算「保真度差异」的一行，也是本次发布唯一跟进的上游 preset 变更。
+  上游 0.2.1 自己的 preset 文件一致，只保留模型前缀。`profile/cordis.yml`（手写参考组合）的
+  spine persona 也删去了同一句。这是 §2.3 preset 对照表里唯一从来不算「保真度差异」的一行，也是
+  本次发布唯一跟进的上游 preset 变更。
+
+  目录要由谁提供，按线不同，本版本不掩饰这点：`dsh-agent-loop` 在 0.1.6-alpha.2、0.1.7-rc.2 与
+  0.2.0-rc.2 上仍注册 `cwd`，但这三条线的 `dsh-base` 都没有 `working-directory` 行，所以它们的
+  **单根**会话不再从提示词里得知工作目录。多根会话仍由本桥自己的 `acp:workspace-roots` 上下文
+  覆盖（单根时该上下文为空）；只有 0.2.1 由宿主提供（`Current working directory: …`）。之所以
+  不做版本门控：为了一句话，在 boot 路径上加三处 `!!js` 探测是更差的取舍，而模型仍可用 `pwd`
+  读到目录。
+
+  这也解释了这次修复为何紧急而非锦上添花：`latest` 现在装的就是这条线，而已发布的 0.10.0 既在
+  peer 范围里放行它（`^0.2.0-rc.2` 包含 `0.2.1-rc.2`），又仍带着这个后缀——所以用默认方式安装
+  已发布版本的用户，在 npm 默认给出的这条线上，第一个回合就会失败。
 
 ## [0.10.0] - 2026-10-01
 
