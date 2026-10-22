@@ -13,13 +13,14 @@ over the ACP wire.
 
 ### Output & telemetry
 
-- **Block + reasoning streaming**: text blocks and the model's thinking arrive live
-  (`agent_message_chunk` / `agent_thought_chunk`); cancelled/retried attempts never leak
-  torn output. Set `streamDeltas: true` on the acp-enhanced row for token-level
-  streaming instead — the reply renders while the model writes it, coalesced on a 75 ms
-  timer; the trade-off is that a mid-block retry can no longer hide its abandoned
-  partial text, so a visible `_[stream interrupted — retrying]_` marker separates the
-  seam (off by default)
+- **Token-level streaming, on by default**: the reply and the model's thinking reach the
+  editor while it is still writing (`agent_message_chunk` / `agent_thought_chunk`,
+  coalesced on a 75 ms timer). The one cost of sending text before its block commits is
+  that a mid-block retry cannot take its abandoned partial back: a visible
+  `_[stream interrupted — retrying]_` marker separates it from the retried attempt. Set
+  `streamDeltas: false` on the acp-enhanced row (`DSH_ACP_STREAM_DELTAS=false`) for the
+  older block-granularity behaviour, where cancelled/retried attempts never leak torn
+  output at all but nothing renders until the block commits
 - **Full telemetry**: context usage ring plus cache hit rate / TPS / input-output-reasoning
   tokens / tool timing / turn counts (`usage_update._meta` carries the full breakdown). The
   ring's denominator is the routed model's declared `contextWindow`, folded from the session
@@ -646,8 +647,8 @@ PersistenceCoordinator.
 
 ## Known limitations
 
-Audio attachments are not supported (audio capability is not advertised), text streams at
-block granularity by default (`streamDeltas: true` opts into token-level streaming, see
+Audio attachments are not supported (audio capability is not advertised), text streams
+token-by-token by default (`streamDeltas: false` restores block buffering, see
 Features), one in-flight prompt per session. MCP supports stdio and streamable HTTP
 (legacy SSE / `acp` transports are not advertised).
 `session/fork` / `session/resume` are not implemented (capabilities
