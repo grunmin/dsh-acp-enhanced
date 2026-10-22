@@ -8,9 +8,7 @@ today; per-release notes live here instead. The long-form engineering records �
 measured, what was rejected, what is left to verify — are in [`docs/plans/`](docs/plans/),
 linked from each entry. A Chinese mirror is kept at [CHANGELOG-zh.md](CHANGELOG-zh.md).
 
-## [Unreleased]
-
-## [0.11.0] - 2026-10-18
+## [0.11.0] - 2026-10-22
 
 dsh **0.2.1** support. Nothing was widened — `^0.2.0-rc.2` already contained `0.2.1-rc.2` — and
 no `lib/` line changed: the release names the line, boots it in CI, and drops
@@ -52,20 +50,36 @@ declaration change plus its evidence:
   dist-tag carries which line;
 - one behavioural caveat is **documented, not fixed**: the four preset declarations this bridge
   inlines are its own copy of the host's compositions, and 0.2.1-rc.2 rewrote all four of them
-  upstream — it dropped `persona.config.suffix` and the subagents' `backgroundMode` (which this
-  copy still passes), added `time-context`, `tool-schedule` and `tool-plugin-market` to `standard`,
-  a `compaction` group and `tool-fs` to `minimal`, and reworded the plan-mode section. The copy
-  still mounts on 0.2.1 (the keyless smoke opens a session, which composes the default preset), so
-  a 0.2.1 ACP session composes the **0.2.0** set: no `time-context`, no `tool-schedule`, and the
-  older plan-mode text. Adopting the new shape needs per-line declarations, because two of the
-  added rows name packages that exist on 0.2.1 only while the install path resolves every row name
-  on every declared line — see `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 and §7.
+  upstream — it dropped `persona.config.suffix` and the subagents' `backgroundMode`, added
+  `time-context`, `tool-schedule` and `tool-plugin-market` to `standard`, a `compaction` group and
+  `tool-fs` to `minimal`, and reworded the plan-mode section. The copy **mounts** on 0.2.1 (the
+  keyless smoke opens a session, which composes the default preset), but mounting is all that
+  proves: the suffix it still carried was not merely stale, it killed every turn on that line (see
+  Fixed below), while `backgroundMode` and the added rows stay unadopted — so a 0.2.1 ACP session
+  composes the **0.2.0** set: no `time-context`, no `tool-schedule`, and the older plan-mode text.
+  Adopting the rest needs per-line declarations, because two of the added rows name packages that
+  exist on 0.2.1 only while the install path resolves every row name on every declared line — see
+  `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 and §7.
 
 Verification has the same shape as 0.10.0's and leaves the same two gaps to the maintainer:
 the model-backed legs and a real Zed session. Measured locally for this release: the five
 offline guards (this release adds `scripts/docs-claim-test.mjs` to the four), the link check
 across all four generations, the install path, the doctor and the keyless boot smoke on
 0.2.1-rc.2 — see `docs/plans/2026-10-18-dsh-0.2.1-support.md`, §5.
+
+### Fixed
+
+- **The inlined presets sent `{{cwd}}`, which 0.2.1 no longer accepts — every turn died.** The
+  rosters carry `dsh-persona` rows, and on the 0.2.1 line `dsh-agent-loop` registers only
+  `provider` and `model` as prompt variables (`cwd` was registered through 0.1.7). Interpolation
+  is strict, so any session composed from the bridge's inlined `standard` / `ptc` / `cordis`
+  rosters failed prompt assembly with `unknown prompt variable "{{cwd}}"` before the first model
+  request: the boot was fine and the mount was fine, every turn failed. The three persona rows now
+  carry the model prefix only, as upstream 0.2.1's own preset files do, and the working-directory
+  service supplies the directory context. `profile/cordis.yml` — the hand-rolled reference
+  composition — drops the same clause from its spine persona. This is the one row of the §2.3
+  preset table that was never a fidelity gap, and the only upstream preset change this release
+  adopts.
 
 ## [0.10.0] - 2026-10-01
 

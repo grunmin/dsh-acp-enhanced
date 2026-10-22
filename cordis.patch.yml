@@ -186,14 +186,19 @@
     #     `persona.config.suffix` and the subagents' `backgroundMode`, reworded the
     #     plan-mode section, removed three rows and added `time-context`,
     #     `tool-schedule`, `tool-plugin-market` (standard) plus `tool-fs` and a
-    #     `compaction` group (minimal). The set below therefore describes the
-    #     **0.2.0** composition for every line including 0.2.1. It still mounts on
-    #     0.2.1 (measured: the keyless smoke opens a session, which composes the
-    #     default preset), so this is a fidelity gap, not a boot failure: a 0.2.1
-    #     session gets no `time-context` and no `tool-schedule`, and the older
-    #     plan-mode text. Adopting the newer shape needs per-line declarations —
-    #     two of the added rows name packages that exist on 0.2.1 only, and the
-    #     install path resolves every row name on every declared line. Recorded in
+    #     `compaction` group (minimal). The suffix is the one removal this copy
+    #     follows, and not for fidelity: `dsh-agent-loop` on 0.2.1 registers only
+    #     `provider` and `model` as prompt variables (`cwd` was registered through
+    #     0.1.7), so a `{{cwd}}` suffix failed prompt assembly and killed every turn
+    #     on that line — the boot was fine, the mount was fine. Everything else
+    #     still describes the **0.2.0** composition for every line including 0.2.1:
+    #     it mounts there (measured: the keyless smoke opens a session, which
+    #     composes the default preset), and the remaining differences are a
+    #     fidelity gap, not a boot failure — a 0.2.1 session gets no `time-context`
+    #     and no `tool-schedule`, and the older plan-mode text. Adopting the newer
+    #     shape needs per-line declarations: two of the added rows name packages
+    #     that exist on 0.2.1 only, and the install path resolves every row name on
+    #     every declared line. Recorded in
     #     docs/plans/2026-10-18-dsh-0.2.1-support.md §2.3/§7.
     #
     # Both roster rows provide the same service name, so exactly one may
@@ -283,7 +288,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -429,7 +433,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -644,7 +647,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: >-
                 You are a coding agent powered by the {{model}} model.
           - id: agent-instructions

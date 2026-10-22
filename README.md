@@ -421,7 +421,7 @@ installation instead.
 
 | Bridge | Supported dsh lines | What changed |
 |---|---|---|
-| **0.11.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2 \|\| ^0.2.1-rc.2` | 0.2.1 line named and booted; nothing widened; `dsh-invariants` dropped |
+| **0.11.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2 \|\| ^0.2.1-rc.2` | 0.2.1 line named and booted; nothing widened; `dsh-invariants` dropped; persona `{{cwd}}` suffix removed (it killed every 0.2.1 turn) |
 | **0.10.0** | `^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1 \|\| ^0.2.0-rc.2` | 0.2.0 support; floor raised to 0.1.6-alpha.1; the range/matrix/generation guard added |
 | **0.9.1** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1 \|\| ^0.1.7-alpha.1` | 0.1.7 roster repackaging absorbed in one patch release |
 | **0.9.0** | `^0.1.5-rc.2 \|\| ^0.1.6-alpha.1` | declared-surface-only rewrite; floor 0.1.5-rc.2; `session/delete` dropped |

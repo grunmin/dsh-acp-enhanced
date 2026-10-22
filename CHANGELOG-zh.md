@@ -7,9 +7,7 @@
 完整工程记录（测了什么、否决了什么、还剩什么要验）在 [`docs/plans/`](docs/plans/) 下，每条都链过去。
 英文原件见 [CHANGELOG.md](CHANGELOG.md)。
 
-## [Unreleased]
-
-## [0.11.0] - 2026-10-18
+## [0.11.0] - 2026-10-22
 
 支持 dsh **0.2.1**。没有放宽任何东西——`^0.2.0-rc.2` 本来就包含 `0.2.1-rc.2`——
 `lib/` 一行未改：这个版本把这条线命名出来、在 CI 里真正启动它，并移除
@@ -41,17 +39,30 @@ agent-preset roster 仍是 0.1.7 引入的「registry + 声明行」形状；`co
 - 启动矩阵与链接检查现在覆盖四条线，canary 的注释也记录了各 dist-tag 分别指向哪条线；
 - 有一处行为差异是**如实记录、本次不改**：本桥内联的四条 preset 声明是它自己对宿主组合的拷贝，
   而 0.2.1-rc.2 把上游那四份全部重写了——去掉 `persona.config.suffix` 与两个子代理的
-  `backgroundMode`（拷贝里仍然传着），给 `standard` 加 `time-context`、`tool-schedule`、
-  `tool-plugin-market`，给 `minimal` 加 `compaction` 组与 `tool-fs`，并改写了 plan mode 的措辞。
-  这份拷贝在 0.2.1 上仍能挂载（keyless 冒烟会开一个会话，从而组合默认 preset），所以 0.2.1 上的
-  ACP 会话组合的是 **0.2.0** 那套：没有 `time-context`、没有 `tool-schedule`，plan mode 文案也是旧的。
-  要跟进新形状需要按线声明，因为新增行里有两个包只在 0.2.1 存在，而安装路径会在每条声明线上解析
-  每一行 `name`——见 `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 与 §7。
+  `backgroundMode`，给 `standard` 加 `time-context`、`tool-schedule`、`tool-plugin-market`，
+  给 `minimal` 加 `compaction` 组与 `tool-fs`，并改写了 plan mode 的措辞。这份拷贝在 0.2.1 上
+  **挂得上**（keyless 冒烟会开一个会话，从而组合默认 preset），但「挂得上」只能证明挂载：它仍然
+  携带的 suffix 不是过时而已，而是让该线每一个回合都死掉（见下方「修复」），而 `backgroundMode`
+  与那些新增行仍未跟进——所以 0.2.1 上的 ACP 会话组合的是 **0.2.0** 那套：没有 `time-context`、
+  没有 `tool-schedule`，plan mode 文案也是旧的。跟进其余部分需要按线声明，因为新增行里有两个包
+  只在 0.2.1 存在，而安装路径会在每条声明线上解析每一行 `name`——见
+  `docs/plans/2026-10-18-dsh-0.2.1-support.md` §2.3 与 §7。
 
 验证的形状与 0.10.0 相同，同样把两件事留给维护者：需要模型的两条腿，以及一次真实的 Zed 会话。
 本次发布在本机实测的部分：五个离线守卫（本版本给原来四个加上
 `scripts/docs-claim-test.mjs`）、四代链接检查、安装路径、doctor，以及 0.2.1-rc.2 上的
 keyless 启动冒烟——见 `docs/plans/2026-10-18-dsh-0.2.1-support.md` §5。
+
+### 修复
+
+- **内联 preset 仍在发送 `{{cwd}}`，而 0.2.1 已不再接受它——每个回合都会失败。** roster 里的
+  `dsh-persona` 行带着这个变量，而 0.2.1 线上的 `dsh-agent-loop` 只注册 `provider` 与 `model`
+  两个提示词变量（`cwd` 一直注册到 0.1.7）。插值是严格的，所以凡是走本桥内联
+  `standard` / `ptc` / `cordis` roster 的会话，都在首个模型请求之前的提示词组装阶段死于
+  `unknown prompt variable "{{cwd}}"`：启动正常，挂载也正常，回合全灭。这三条 persona 行现在与
+  上游 0.2.1 自己的 preset 文件一致，只保留模型前缀，工作目录由 working-directory 服务提供。
+  `profile/cordis.yml`（手写参考组合）的 spine persona 也删去了同一句。这是 §2.3 preset 对照表里
+  唯一从来不算「保真度差异」的一行，也是本次发布唯一跟进的上游 preset 变更。
 
 ## [0.10.0] - 2026-10-01
 
