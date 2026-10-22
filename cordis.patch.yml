@@ -814,3 +814,8 @@
         # profile. `applySelection` fails such a pick as invalid params and
         # leaves the session on its current route.
         includeAllProviders: !!js "process.env.DSH_ACP_INCLUDE_ALL_PROVIDERS === 'true'"
+        # Token-level streaming is the schema default; this is the escape hatch
+        # for the one cost it has — a mid-block retry cannot unsend the partial
+        # it already delivered, so its seam is a visible marker. `=false` gives
+        # the older block-buffered behaviour back without editing the profile.
+        streamDeltas: !!js "process.env.DSH_ACP_STREAM_DELTAS !== 'false'"
