@@ -46,8 +46,11 @@ const bridgeDeps = {
 // line (0.1.3-alpha.2+) and all consuming the same declared service surface:
 // "framesNext" is the 0.1.6 alpha line — the oldest line the peer range claims
 // since 0.10.0 dropped 0.1.5-rc.2 — "framesRegistry" the 0.1.7 line that
-// replaced the preset roster, and "framesRegistry020" the 0.2.0 line, which
-// kept that roster and moved only the host's peer gate. Each mirrors the repo
+// replaced the preset roster, "framesRegistry020" the 0.2.0 line, which
+// kept that roster and moved only the host's peer gate, and
+// "framesRegistry021" the 0.2.1 line, which changed nothing this repo consumes
+// and is carried for the reason the guard exists: a declared line needs a
+// link-time probe, not an assumption. Each mirrors the repo
 // devDependency ranges (the same ranges the pinned @deepseek-ai/dsh CLI
 // declares), so a fresh resolution matches what a real profile boot heals.
 // `roster` names the agent-preset package that line ships, which the row the
@@ -132,6 +135,35 @@ const GENERATIONS = {
       '@deepseek-ai/dsh-skill': '0.2.0-rc.2',
       '@deepseek-ai/dsh-tools': '0.2.0-rc.2',
       '@deepseek-ai/dsh-user-approval': '0.2.0-rc.2',
+    },
+  },
+  // 0.2.1 imports the same surface and adopts the same roster, so this
+  // generation exists for the claim, not for a behaviour: the pins reproduce
+  // what @deepseek-ai/dsh@0.2.1-rc.2 resolves, with one structural difference —
+  // `@deepseek-ai/dsh-invariants` is *absent*, because upstream stopped
+  // publishing it at 0.2.0-rc.2 and 0.2.1 no longer depends on it. A generation
+  // that kept installing it would prove a closure the line does not have; the
+  // peer and devDependency were dropped for the same reason (package.json).
+  framesRegistry021: {
+    label: '0.2.1+ (agent-preset registry API, 0.2.1 line)',
+    roster: '@deepseek-ai/dsh-agent-preset-registry',
+    deps: {
+      '@deepseek-ai/cordis': '~4.0.5',
+      '@deepseek-ai/cordis-plugin-include': '~1.0.10',
+      '@deepseek-ai/cordis-plugin-loader': '~1.0.6',
+      '@deepseek-ai/dsh': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-agent': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-agent-instructions': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-agent-preset': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-agent-preset-registry': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-llm': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-mcp-client': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-permission-presets': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-session': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-session-query': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-skill': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-tools': '0.2.1-rc.2',
+      '@deepseek-ai/dsh-user-approval': '0.2.1-rc.2',
     },
   },
 }

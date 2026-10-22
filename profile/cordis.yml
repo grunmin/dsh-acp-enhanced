@@ -23,10 +23,15 @@
     maxParallelToolCalls: 1
     workspaceContext:
       maxBytes: 65536
+    # No `{{cwd}}` clause on purpose: 0.2.1's `dsh-agent-loop` registers only
+    # `provider` and `model` as prompt variables, so a `{{cwd}}` reference fails
+    # prompt assembly and kills every turn. Lines ≤ 0.2.0 do register `cwd` and
+    # have no `working-directory` row, so they lose the directory sentence — see
+    # the preset note in cordis.patch.yml for why that trade was taken.
     persona: >-
-      You are a coding assistant powered by the {{model}} model. Your working
-      directory is {{cwd}}. Your bash tool runs under a file sandbox — a
-      `[sandbox: file access denied …]` result is policy, not a command bug.
+      You are a coding assistant powered by the {{model}} model. Your bash
+      tool runs under a file sandbox — a `[sandbox: file access denied …]`
+      result is policy, not a command bug.
 
       Verify your work by running the code or tests. Keep answers brief and factual.
 

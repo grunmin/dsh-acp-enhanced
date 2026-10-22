@@ -29,10 +29,17 @@ jobs:
         # is wide enough. Every job below boots a real profile, so a green run is
         # boot-time verification of the support claim — the old matrix had no
         # dsh axis at all (it installed 0.1.0-rc.6 and never booted 0.1.6).
+        # 0.2.1 is the first line added since, and the first one whose
+        # composition *nothing* in this repo changes for: the range alternative
+        # `^0.2.1-rc.2` narrows nothing (it is already inside `^0.2.0-rc.2`), so
+        # the leg exists to prove the boot, not to widen a gate. What it proves
+        # is that the bridge's rows still resolve on a line that dropped a
+        # package the 0.2.0 closure carried (`@deepseek-ai/dsh-invariants` stopped
+        # publishing at 0.2.0-rc.2) — see docs/plans/2026-10-18-dsh-0.2.1-support.md.
         # `.github/workflows/canary.yml` watches the line after these.
         # `scripts/support-claim-test.mjs` fails if this list, the declared
         # range and `scripts/compat-check.mjs`'s generations disagree.
-        dsh-version: ['0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2']
+        dsh-version: ['0.1.6-alpha.2', '0.1.7-rc.2', '0.2.0-rc.2', '0.2.1-rc.2']
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -44,7 +51,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Syntax check
-        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/stored-titles.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/boot-classify-test.mjs && node --check scripts/cancel-cause-test.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/stored-titles-test.mjs && node --check scripts/support-claim-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/boot-classify.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
+        run: node --check lib/index.js && node --check lib/codec.js && node --check lib/stored-titles.js && node --check lib/terminal-codec.js && node --check scripts/acp-client.mjs && node --check scripts/acp-client-tools.mjs && node --check scripts/acp-doctor.mjs && node --check scripts/acp-launcher-test.mjs && node --check scripts/acp-message-fallback-test.mjs && node --check scripts/acp-mcp-test.mjs && node --check scripts/acp-resume-test.mjs && node --check scripts/acp-smoke-keyless.mjs && node --check scripts/boot-classify-test.mjs && node --check scripts/cancel-cause-test.mjs && node --check scripts/compat-check.mjs && node --check scripts/api-surface-check.mjs && node --check scripts/codec-image-test.mjs && node --check scripts/context-window-test.mjs && node --check scripts/docs-claim-test.mjs && node --check scripts/pack-check.mjs && node --check scripts/replay-order-test.mjs && node --check scripts/session-facts-test.mjs && node --check scripts/stored-titles-test.mjs && node --check scripts/support-claim-test.mjs && node --check scripts/terminal-codec-test.mjs && node --check scripts/tool-result-test.mjs && node --check scripts/web-search-test.mjs && node --check scripts/acp-image-e2e.mjs && node --check scripts/lib/boot-classify.mjs && node --check scripts/lib/dsh-home.mjs && node --check scripts/lib/dsh-version.mjs && node --check scripts/fixtures/mcp-echo-server.mjs
       - name: Public-surface guard (declared harness API only)
         run: node scripts/api-surface-check.mjs
       - name: Boot classification (skip line vs crash signatures)
@@ -58,6 +65,14 @@ jobs:
         # boot on a line the manifest does not claim (or vice versa) is exactly
         # the failure that shipped a silent "skipping profile bundle".
         run: node scripts/support-claim-test.mjs
+      - name: Docs claims (README surface, changelogs, language parity)
+        # Boots nothing: it reads the four user-facing documents and fails when a
+        # README quotes a range the manifest no longer declares, when a
+        # changelog's newest entry is not the version in package.json, when the
+        # two changelogs disagree, or when release history moves back into a
+        # README. Every stale claim this repo shipped was a README fact no guard
+        # read; this is the guard for the structural half of them.
+        run: node scripts/docs-claim-test.mjs
       - name: Launcher contract (no implicit home switch)
         run: node scripts/acp-launcher-test.mjs
       - name: Codec unit tests (offline, deterministic)

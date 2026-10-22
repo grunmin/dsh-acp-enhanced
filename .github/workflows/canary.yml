@@ -6,15 +6,17 @@ name: canary (next dsh line)
 # shows up here — red, in the open — instead of as user breakage after a
 # release.
 #
-# Current state (2026-09-30): `alpha` is 0.1.7-alpha.2 while `latest`/`next` are
-# 0.2.0-rc.2 — every one of them inside the supported range, so this job
-# re-verifies a supported line instead of warning about the next one. That is
-# still its own coverage: the boot matrix drives `dsh plugin add` and the smoke
-# only for the three *declared* lines, while this job runs the same paths
-# against whatever `alpha` currently points at, and it becomes a real early
-# warning again the moment upstream publishes a line past the declared range
-# under `alpha` — no change needed here. `scripts/support-claim-test.mjs` keeps
-# the declared range and the CI matrix honest meanwhile.
+# Current state (2026-10-22): `alpha` is 0.2.1-alpha.5 while `next` and `latest`
+# are both 0.2.1-rc.2 — every one of them inside the supported range, so this job
+# re-verifies a supported line instead of warning about the next one. `latest`
+# moved off 0.2.0-rc.2 on 2026-10-19: the line this repo names is now the line a
+# default install gets, which is why a broken preset on it is user-visible rather
+# than theoretical. That is still its own coverage: the boot matrix drives `dsh plugin
+# add` and the smoke only for the four *declared* lines, while this job runs the
+# same paths against whatever `alpha` currently points at, and it becomes a real
+# early warning again the moment upstream publishes a line past the declared
+# range under `alpha` — no change needed here. `scripts/support-claim-test.mjs`
+# keeps the declared range and the CI matrix honest meanwhile.
 #
 # Reading the result:
 #   green → the bridge still works on that line; widen the peer range when the
