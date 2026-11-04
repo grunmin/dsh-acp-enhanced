@@ -8,6 +8,37 @@ today; per-release notes live here instead. The long-form engineering records �
 measured, what was rejected, what is left to verify — are in [`docs/plans/`](docs/plans/),
 linked from each entry. A Chinese mirror is kept at [CHANGELOG-zh.md](CHANGELOG-zh.md).
 
+## [0.11.2] - 2026-11-04
+
+A context attachment can no longer take a whole session down: the editor caret/selection block is
+folded into the prompt instead of being refused. Patch release under this repo's policy: tag and
+npm only, no GitHub release.
+
+### Fixed
+
+- An embedded text `resource` block is converted into the user message instead of failing the turn
+  with `-32602`. JetBrains' ACP client sends the editor caret/selection that way even though the
+  bridge advertises `embeddedContext: false`, and it treats a failed `session/prompt` as
+  unrecoverable — it kills the agent process and reconnects — so one context attachment ended the
+  session (#19). The payload is inlined behind a `<context ref="…" mimeType="…">` tag: the tag marks
+  provenance, so the model reads the body as reference material rather than as instructions. The
+  binary (`blob`) half of the same union is still refused by name, and that refusal happens in the
+  admission scan — before an image earlier in the prompt can be committed to the attachment store,
+  the invariant the 0.11.0 image work established.
+- `displayText` uses the URI leaf (`@sample.py`) instead of the full `file://` URL, which used to
+  reach session titles and transcripts.
+
+### Tests
+
+- The keyless smoke drives a `/status` prompt with a `resource` attached: the text block must not
+  reject, the binary one must still return `-32602`, and the session must keep answering
+  afterwards. The codec unit tests pin the fold, the blob/malformed refusals, the no-orphan
+  ordering, and text/image alternation around an image.
+- The 0.1.6-alpha.2 CI cell now resolves its dependency tree as of 2026-11-01. The 2026-11-04
+  `@deepseek-ai/cordis` 4.1.0 / plugin-* 1.1.0 release broke that line's preset mount on any fresh
+  install (host-side: a clean checkout reproduces it, and 0.1.7+ boots fine), which had made the
+  cell red for a reason that was never this bridge.
+
 ## [0.11.1] - 2026-10-22
 
 Token-level streaming becomes the default, and a model pick that cannot route now says why — and

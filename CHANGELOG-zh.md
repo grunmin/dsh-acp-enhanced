@@ -7,6 +7,31 @@
 完整工程记录（测了什么、否决了什么、还剩什么要验）在 [`docs/plans/`](docs/plans/) 下，每条都链过去。
 英文原件见 [CHANGELOG.md](CHANGELOG.md)。
 
+## [0.11.2] - 2026-11-04
+
+一个上下文附件不再能带走整个会话：编辑器光标/选区块折进 prompt，而不是被拒绝。
+按仓库策略属于 patch 版本：只打 tag + 发 npm，不发 GitHub release。
+
+### 修复
+
+- 内嵌文本 `resource` 块转成用户消息的一部分，不再以 `-32602` 让整轮失败。JetBrains 的 ACP
+  客户端把编辑器光标/选区按这种形态发来（即使桥 advertise 的是 `embeddedContext: false`），
+  并把 `session/prompt` 的失败判为不可恢复——直接杀掉 agent 进程再重连——所以一个上下文
+  附件就能结束会话（#19）。payload 以 `<context ref="…" mimeType="…">` 标签内联：标签标示
+  出处，模型按参考资料而不是指令读正文。同一个 union 里的二进制（`blob`）半仍然按名字拒绝，
+  而且拒绝发生在准入扫描阶段——在更早的图片被写进 attachment store 之前，正是 0.11.0 图片
+  支持建立的那条不变量。
+- `displayText` 改用 URI 叶子（`@sample.py`），不再把完整的 `file://` 地址带进会话标题与记录。
+
+### 测试
+
+- keyless smoke 用带 `resource` 的 `/status` 跑一遍：文本块不得被拒，二进制块仍须返回
+  `-32602`，且之后会话继续应答。codec 单测钉住折入、blob/畸形拒绝、无孤儿落盘的顺序，以及
+  图片两侧的文本交替。
+- 0.1.6-alpha.2 这个 CI cell 改为按 2026-11-01 解析依赖树。2026-11-04 发布的
+  `@deepseek-ai/cordis` 4.1.0 / plugin-* 1.1.0 让这条老线在任何全新安装上都挂不上 preset
+  （宿主侧问题：干净 checkout 可复现，0.1.7+ 正常），此前该 cell 的红与本桥无关。
+
 ## [0.11.1] - 2026-10-22
 
 逐 token 流式成为默认；选中一个无法路由的模型时，现在会说明原因，并且不会动当前路由。
