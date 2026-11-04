@@ -230,6 +230,48 @@ async function main() {
     check('/status replied with text', typeof statusChunk?.update?.content?.text === 'string'
       && statusChunk.update.content.text.includes('route'), statusChunk?.update?.content?.text)
 
+    // ── prompt content: the embedded text resource (issue #19) ──────────────
+    // JetBrains turns the editor caret/selection into an ACP `resource` block
+    // and sends it even though `promptCapabilities.embeddedContext` is false.
+    // The bridge answered -32602 for it, which that client treats as fatal and
+    // answers by killing the agent process, so one unadvertised context block
+    // took the whole session down. A text resource must fold into the prompt;
+    // the binary half of the same union must still be refused by name — and a
+    // refusal must leave the session alive.
+    const resourceMark = notifications.length
+    const resourceStatus = await rpc('session/prompt', {
+      sessionId,
+      prompt: [
+        { type: 'text', text: '/status' },
+        {
+          type: 'resource',
+          resource: {
+            uri: 'file:///w/sample.py',
+            mimeType: 'application/json',
+            text: JSON.stringify({ offsetEncoding: 'byte', selections: [{ startOffset: 0, endOffset: 7 }] }),
+          },
+        },
+      ],
+    })
+    check('a text resource prompt settles instead of rejecting',
+      resourceStatus.stopReason === 'end_turn', JSON.stringify(resourceStatus))
+    check('the slash line still runs with a resource attached', notifications.slice(resourceMark).some(
+      (n) => n.sessionId === sessionId && n.update?.sessionUpdate === 'agent_message_chunk'
+        && String(n.update.content?.text ?? '').includes('route'),
+    ))
+
+    const binaryReply = await rpcMessage('session/prompt', {
+      sessionId,
+      prompt: [{ type: 'resource', resource: { uri: 'file:///w/a.bin', blob: 'AAAA' } }],
+    })
+    check('a binary resource is refused as invalid params, by name',
+      binaryReply.error?.code === -32602
+        && /unsupported prompt content type: resource \(binary\)/.test(String(binaryReply.error?.message)),
+      JSON.stringify(binaryReply.error))
+
+    const survived = await rpc('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/status' }] })
+    check('the session survives a refused resource', survived.stopReason === 'end_turn', JSON.stringify(survived))
+
     const model = await rpc('session/prompt', {
       sessionId,
       prompt: [{ type: 'text', text: '/model' }],
