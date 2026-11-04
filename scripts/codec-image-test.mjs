@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Unit tests for the image capability codec: convertPrompt / attachmentIngestOf /
- * canonicalImageMediaType with a fake attachment store. No network, no dsh —
- * runs anywhere `node` exists.
+ * Unit tests for the prompt-content codec: convertPrompt / attachmentIngestOf /
+ * canonicalImageMediaType with a fake attachment store, covering image blocks
+ * and embedded text resources. No network, no dsh — runs anywhere `node` exists.
  */
 import assert from 'node:assert/strict'
 import {
@@ -87,6 +87,91 @@ check('mediaType empty → undefined', canonicalImageMediaType(undefined) === un
     JSON.stringify(out.blocks))
   check('displayText strips resource markup', out.displayText === 'hello @a.txt  world', out.displayText)
   check('no images stored', calls.save.length === 0)
+}
+
+// ── convertPrompt: embedded text resource (caret / selection context) ───────
+
+/** The payload shape JetBrains sends for an editor selection. */
+const SELECTION_JSON = JSON.stringify({ description: 'Byte offsets of selected text', offsetEncoding: 'byte', selections: [{ startOffset: 278, endOffset: 283 }] })
+
+{
+  const { store, calls } = fakeStore()
+  const out = await convertPrompt([
+    { type: 'text', text: 'what does this do?' },
+    { type: 'resource', resource: { uri: 'file:///w/sample.py', mimeType: 'application/json', text: SELECTION_JSON } },
+  ], store)
+  check('text resource is folded into one text block',
+    out.blocks.length === 1 && out.blocks[0].type === 'text', JSON.stringify(out.blocks))
+  const body = out.blocks[0]?.text ?? ''
+  check('text resource carries uri + mime provenance',
+    body.includes('<context ref="file:///w/sample.py" mimeType="application/json">')
+      && body.includes(SELECTION_JSON) && body.includes('</context>'), body)
+  check('text resource keeps the user text first', body.startsWith('what does this do?'), body)
+  check('text resource display uses the URI leaf', out.displayText === 'what does this do? @sample.py', out.displayText)
+  check('text resource stores nothing', calls.save.length === 0)
+}
+
+{
+  // A resource without a uri is still text we can use — attributing it is
+  // best-effort, refusing it would kill the whole turn for a missing attribute.
+  const out = await convertPrompt([
+    { type: 'resource', resource: { text: 'inline note' } },
+  ], undefined)
+  check('resource without uri degrades to an unattributed context tag',
+    out.blocks.length === 1 && out.blocks[0].text.includes('<context>\ninline note\n</context>'),
+    JSON.stringify(out.blocks))
+  check('resource without uri still yields a display line', out.displayText === '@context', out.displayText)
+}
+
+for (const [label, block] of [
+  ['blob resource', { type: 'resource', resource: { uri: 'file:///w/a.bin', mimeType: 'application/octet-stream', blob: 'AAAA' } }],
+  ['resource with no payload', { type: 'resource', resource: { uri: 'file:///w/a.bin' } }],
+  ['resource with a non-object payload', { type: 'resource', resource: 'file:///w/a.bin' }],
+]) {
+  let threw = null
+  try {
+    await convertPrompt([{ type: 'text', text: 'hi' }, block], undefined)
+  } catch (error) {
+    threw = error
+  }
+  check(`${label} refused as UnsupportedPromptContentError`,
+    threw instanceof UnsupportedPromptContentError && /resource \(binary\)/.test(threw.message),
+    String(threw?.message))
+}
+
+{
+  // Regression guard for the invariant b6e454a established: the binary half of
+  // the resource union is decided during admission, so an image earlier in the
+  // prompt is never committed before the rejection.
+  const { store, calls } = fakeStore()
+  let threw = null
+  try {
+    await convertPrompt([
+      { type: 'image', mimeType: 'image/png', data: ONE_PX_PNG },
+      { type: 'resource', resource: { uri: 'file:///w/a.bin', blob: 'AAAA' } },
+    ], store)
+  } catch (error) {
+    threw = error
+  }
+  check('binary resource after an image rejects before any save',
+    threw instanceof UnsupportedPromptContentError && calls.save.length === 0,
+    `${String(threw?.message)} saves=${calls.save.length}`)
+}
+
+{
+  // 图文交替: a text resource is text, so it flushes around an image the same
+  // way a text block does.
+  const { store } = fakeStore()
+  const out = await convertPrompt([
+    { type: 'resource', resource: { uri: 'file:///w/before.py', mimeType: 'text/x-python', text: 'print(1)' } },
+    { type: 'image', mimeType: 'image/png', data: ONE_PX_PNG },
+    { type: 'resource', resource: { uri: 'file:///w/after.py', mimeType: 'text/x-python', text: 'print(2)' } },
+  ], store)
+  check('resources keep wire order around an image',
+    out.blocks.map((block) => block.type).join(',') === 'text,image,text', JSON.stringify(out.blocks))
+  check('resource text lands on the right side of the image',
+    out.blocks[0]?.text.includes('print(1)') && out.blocks[2]?.text.includes('print(2)'),
+    JSON.stringify(out.blocks))
 }
 
 // ── convertPrompt: image without an ingest is refused ──────────────────────

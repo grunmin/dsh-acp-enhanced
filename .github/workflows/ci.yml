@@ -97,7 +97,23 @@ jobs:
       - name: Cross-generation link check (README's promised guard)
         run: node scripts/compat-check.mjs
       - name: Install dsh CLI (${{ matrix.dsh-version }})
-        run: npm install -g @deepseek-ai/dsh@${{ matrix.dsh-version }}
+        # 0.1.6-alpha.2 takes its whole tree from whatever the registry serves
+        # at install time. The 2026-11-04 @deepseek-ai/cordis* release
+        # (cordis 4.1.0 / plugin-include|loader|group 1.1.0) changed
+        # preset-include loading, and that line's `session/new` now dies with
+        #   agent-presets: preset "standard" failed to mount:
+        #   Cannot read properties of undefined (reading 'parent')
+        # — host-side, not ours: a clean main checkout reproduces it, and the
+        # 0.1.7+ lines boot fine on the same versions, so only the old cell is
+        # resolved as of a date before that release. `--before` is the honest
+        # form of "this is the tree 0.1.6 shipped against": one date, rather
+        # than four hand-pinned packages that drift apart again later.
+        run: |
+          if [ "${{ matrix.dsh-version }}" = "0.1.6-alpha.2" ]; then
+            npm install -g --before=2026-11-01 @deepseek-ai/dsh@${{ matrix.dsh-version }}
+          else
+            npm install -g @deepseek-ai/dsh@${{ matrix.dsh-version }}
+          fi
       - name: Keyless boot smoke (initialize + session/new)
         run: node scripts/acp-smoke-keyless.mjs
       - name: MCP mount smoke (no model calls)
